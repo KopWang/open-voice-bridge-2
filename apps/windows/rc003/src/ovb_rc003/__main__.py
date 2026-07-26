@@ -20,12 +20,37 @@ built from the standalone ``src/launcher.py`` entry point - see XRBM-021):
                   build that produces an executable which cannot even be
                   launched is not caught by the PyInstaller build step
                   alone).
+- ``--diagnose-ble-candidates <result-path>``  HIDDEN, undocumented in
+                  ``--help`` on purpose (XRBM-035 RETRY 1): the settings
+                  window's "检查与修复" page's BLE candidate check
+                  re-invokes this same entry point (source:
+                  ``sys.executable -m ovb_rc003 --diagnose-ble-candidates
+                  <result-path>``; frozen build: the packaged .exe
+                  re-invoked with just the flag + path - see
+                  ``windows_diagnostics.build_ble_diagnostics_subprocess_
+                  command()``) as a disposable CHILD PROCESS purely so the
+                  parent can forcibly terminate/kill it with a real,
+                  OS-confirmed hard bound if the native WinRT call it makes
+                  never returns - something no in-process asyncio
+                  cancellation can guarantee (see
+                  ``windows_diagnostics.py``'s "-- BLE candidate --"
+                  section for the full story). ``<result-path>`` is where
+                  this process writes its ONE, strictly-shaped result JSON
+                  file - NEVER stdout, which a real PyInstaller
+                  ``console=False`` build sets to ``None`` (see that same
+                  module section for the citation) - and a missing/empty
+                  path here fails this branch CLOSED (a nonzero exit,
+                  before ever attempting discovery, never a fallback
+                  location and never falling through to running the
+                  bridge). Never launched by a real end user directly; not
+                  part of this program's public CLI surface.
 - ``--help``/``-h``  print this usage and exit 0
 
-``--settings``, ``--dry-run`` and ``--help``/``-h`` are all checked and
-dispatched BEFORE the bridge branch below is ever reached, so none of them
-touch the single-instance mutex at all (XRBM-021 changed threat model: the
-guard applies only to the no-argument bridge mode).
+``--settings``, ``--dry-run``, ``--diagnose-ble-candidates`` and
+``--help``/``-h`` are all checked and dispatched BEFORE the bridge branch
+below is ever reached, so none of them touch the single-instance mutex at
+all (XRBM-021 changed threat model: the guard applies only to the
+no-argument bridge mode).
 """
 
 from __future__ import annotations
@@ -48,9 +73,11 @@ def _print_help() -> None:
 
 def _dry_run() -> int:
     """Imports every first-party module this package ships, without
-    constructing a Tk window, opening a BLE connection, starting Raw Input,
-    or touching an audio device. Importing ``settings_ui`` only imports the
-    ``tkinter`` module - it does not construct any widget or window.
+    constructing a Qt window, opening a BLE connection, starting Raw Input,
+    or touching an audio device. Importing ``settings_ui``/``qt_settings_app``
+    never requires PySide6-Essentials to be installed (XRBM-030): both defer
+    any Qt import to inside a function body, only reached when the settings
+    window is actually opened - see qt_settings_app.py's module docstring.
     """
 
     from . import (  # noqa: F401
@@ -60,8 +87,10 @@ def _dry_run() -> int:
         audio_output,
         audio_playback,
         ble_transport_winrt,
+        bridge_launcher,
         config,
         connection_supervisor,
+        device_catalog,
         device_profile,
         frida_compat,
         hid_identity,
@@ -69,9 +98,12 @@ def _dry_run() -> int:
         identity,
         key_mapping,
         logging_setup,
+        qt_settings_app,
         raw_input_windows,
+        remote_layout,
         resources,
         settings_ui,
+        shell_targets,
         single_instance,
         voice_controller,
         win32_input,
@@ -101,7 +133,18 @@ def _run_bridge() -> None:
     exit rather than silently disappearing.
     """
 
-    from . import app, single_instance
+    from . import app, config, device_catalog, single_instance
+
+    selected_device_id = device_catalog.normalize_device_id(
+        config.load_config(config.config_path()).get("selected_device_profile")
+    )
+    if selected_device_id == device_catalog.DJI_MIC_2_ID:
+        single_instance.show_bridge_startup_blocked_notice(
+            "当前设备是 DJI Mic 2。它由 Windows 作为系统录音输入使用，不需要也不会启动 "
+            "RC003 BLE/HID/ATVV 桥。请在 Open Voice Bridge 设置中检查录音端点。",
+            title="Open Voice Bridge",
+        )
+        return
 
     try:
         with single_instance.BridgeInstanceGuard():
@@ -137,6 +180,23 @@ def main() -> None:
         return
     if "--dry-run" in args:
         raise SystemExit(_dry_run())
+    if "--diagnose-ble-candidates" in args:
+        # XRBM-035 RETRY 1: hidden, undocumented child-process entry point -
+        # see this module's own docstring. Always raises SystemExit from
+        # this branch (never `return`s, never falls through below), which
+        # is itself part of the fail-closed contract: whatever
+        # run_ble_diagnostics_subprocess_entrypoint() decides, this process
+        # can never end up calling _run_bridge() by accident. A missing
+        # result-path argument (index out of range) is passed through as
+        # None - that function's own contract is to fail closed on that,
+        # not this dispatch site's job to second-guess.
+        from . import windows_diagnostics
+
+        flag_index = args.index("--diagnose-ble-candidates")
+        result_path = args[flag_index + 1] if flag_index + 1 < len(args) else None
+        raise SystemExit(
+            windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint(result_path)
+        )
     if "--settings" in args:
         from . import settings_ui
 

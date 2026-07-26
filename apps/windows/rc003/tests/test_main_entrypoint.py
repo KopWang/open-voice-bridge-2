@@ -13,7 +13,7 @@ import sys
 import unittest
 
 from ovb_rc003 import __main__ as main_module
-from ovb_rc003 import app, single_instance
+from ovb_rc003 import app, config, device_catalog, single_instance, windows_diagnostics
 
 
 def _make_guard_class(*, raise_on_enter=None, enter_calls=None):
@@ -42,6 +42,7 @@ class _ArgvRestoringTestCase(unittest.TestCase):
         self._original_guard_cls = single_instance.BridgeInstanceGuard
         self._original_app_main = app.main
         self._original_notice = single_instance.show_bridge_startup_blocked_notice
+        self._original_load_config = config.load_config
         # XRBM-023: default every test in this suite to a safe no-op stub for
         # the visible-notice callable. show_bridge_startup_blocked_notice's
         # real implementation opens a real, SYSTEMMODAL Win32 MessageBoxW -
@@ -52,15 +53,36 @@ class _ArgvRestoringTestCase(unittest.TestCase):
         # Tests that need to assert on the exact notice text/call count still
         # override this in their own body, same as before.
         single_instance.show_bridge_startup_blocked_notice = lambda message: None
+        config.load_config = lambda path: {
+            "selected_device_profile": device_catalog.RC003_ID
+        }
 
     def tearDown(self):
         sys.argv = self._original_argv
         single_instance.BridgeInstanceGuard = self._original_guard_cls
         app.main = self._original_app_main
         single_instance.show_bridge_startup_blocked_notice = self._original_notice
+        config.load_config = self._original_load_config
 
 
 class BridgeModeRoutingTests(_ArgvRestoringTestCase):
+    def test_dji_profile_never_starts_the_rc003_bridge(self):
+        app.main = lambda: self.fail("DJI Mic 2 must not start the RC003 bridge")
+        config.load_config = lambda path: {
+            "selected_device_profile": device_catalog.DJI_MIC_2_ID
+        }
+        notice_calls = []
+        single_instance.show_bridge_startup_blocked_notice = (
+            lambda message, **kwargs: notice_calls.append((message, kwargs))
+        )
+        sys.argv = ["ovb_rc003"]
+
+        main_module.main()
+
+        self.assertEqual(len(notice_calls), 1)
+        self.assertIn("DJI Mic 2", notice_calls[0][0])
+        self.assertEqual(notice_calls[0][1]["title"], "Open Voice Bridge")
+
     def test_no_args_calls_app_main_exactly_once_on_first_owner(self):
         app_main_calls = []
         app.main = lambda: app_main_calls.append(1)
@@ -245,6 +267,98 @@ class ArgumentModeBypassTests(_ArgvRestoringTestCase):
             settings_ui.main = original_settings_main
 
         self.assertEqual(enter_calls, [])
+
+    def test_diagnose_ble_candidates_never_touches_the_guard(self):
+        enter_calls = []
+        single_instance.BridgeInstanceGuard = _make_guard_class(enter_calls=enter_calls)
+        app.main = lambda: self.fail("--diagnose-ble-candidates must never call app.main()")
+        sys.argv = ["ovb_rc003", "--diagnose-ble-candidates", "/tmp/result.json"]
+
+        original_entrypoint = windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint
+        windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint = lambda result_path: 0
+        try:
+            with self.assertRaises(SystemExit):
+                main_module.main()
+        finally:
+            windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint = original_entrypoint
+
+        self.assertEqual(enter_calls, [])
+
+
+class DiagnoseBleCandidatesDispatchTests(_ArgvRestoringTestCase):
+    """XRBM-035 RETRY 1 In-scope item 6: the hidden child-process entry
+    point dispatch - fail-closed on a missing result path, never falls
+    through to _run_bridge(), and stays absent from the public --help
+    surface.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._original_entrypoint = windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint
+
+    def tearDown(self):
+        windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint = self._original_entrypoint
+        super().tearDown()
+
+    def test_dispatches_with_the_result_path_argument_and_propagates_its_exit_code(self):
+        received_paths = []
+        windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint = (
+            lambda result_path: received_paths.append(result_path) or 7
+        )
+        app.main = lambda: self.fail("must never call app.main()")
+        sys.argv = ["ovb_rc003", "--diagnose-ble-candidates", "/tmp/result-path.json"]
+
+        with self.assertRaises(SystemExit) as ctx:
+            main_module.main()
+
+        self.assertEqual(received_paths, ["/tmp/result-path.json"])
+        self.assertEqual(ctx.exception.code, 7)
+
+    def test_missing_result_path_argument_passes_none_through_fail_closed(self):
+        # __main__.py itself never guesses a fallback path or falls through
+        # to _run_bridge() - it is run_ble_diagnostics_subprocess_
+        # entrypoint()'s own job to fail closed on None (see
+        # windows_diagnostics.py's own tests for that contract).
+        received_paths = []
+        windows_diagnostics.run_ble_diagnostics_subprocess_entrypoint = (
+            lambda result_path: received_paths.append(result_path) or 1
+        )
+        app.main = lambda: self.fail("must never call app.main()")
+        sys.argv = ["ovb_rc003", "--diagnose-ble-candidates"]  # no path follows the flag
+
+        with self.assertRaises(SystemExit) as ctx:
+            main_module.main()
+
+        self.assertEqual(received_paths, [None])
+        self.assertEqual(ctx.exception.code, 1)
+
+    def test_flag_constant_stays_in_sync_with_windows_diagnostics_module(self):
+        # __main__.py's own argv dispatch uses a literal string (kept that
+        # way deliberately - see __main__.py's own comment - rather than
+        # eagerly importing windows_diagnostics at module level just for
+        # this one check, which would add sounddevice/numpy/winrt to every
+        # --help/bare invocation's import graph). This regression test is
+        # what keeps that literal from silently drifting out of sync with
+        # the module that actually owns the IPC contract.
+        import inspect
+
+        source = inspect.getsource(main_module)
+        self.assertIn(
+            f'"{windows_diagnostics.BLE_DIAGNOSTICS_SUBPROCESS_FLAG}" in args', source
+        )
+
+    def test_help_text_never_mentions_the_hidden_diagnostics_flag(self):
+        # XRBM-035 RETRY 1 In-scope item 6: not part of this program's
+        # public CLI surface.
+        import io
+        import contextlib
+
+        sys.argv = ["ovb_rc003", "--help"]
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            main_module.main()  # returns normally, no SystemExit
+
+        self.assertNotIn("--diagnose-ble-candidates", buffer.getvalue())
 
 
 if __name__ == "__main__":

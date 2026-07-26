@@ -6,9 +6,11 @@ dataclasses); none of it touches ``tkinter.Tk``/``Toplevel``/mainloop.
 """
 
 import unittest
+from pathlib import Path
 
-from ovb_rc003 import audio_output, hotkey, key_mapping
+from ovb_rc003 import audio_output, bridge_launcher, hotkey, key_mapping, logging_setup, single_instance
 from ovb_rc003.settings_ui import (
+    LAUNCH_NOT_STARTED_TEXT,
     SettingsValidationError,
     _VOICE_DISPLAY,
     _action_to_display,
@@ -17,6 +19,8 @@ from ovb_rc003.settings_ui import (
     _parse_endpoint_display,
     build_save_model,
     default_display_state,
+    describe_launch_result,
+    describe_log_open_result,
 )
 
 
@@ -41,7 +45,7 @@ class DisplayRoundTripTests(unittest.TestCase):
     def test_voice_action_display_mentions_hotkey_settings(self):
         action = key_mapping.ButtonAction(key_mapping.ActionKind.VOICE)
         display = _action_to_display(action)
-        self.assertIn("Win+H", display)
+        self.assertIn("专用组合键", display)
 
     def test_voice_action_round_trips_without_raising(self):
         # Regression test for the exact XRBM-014 review RETRY P1 #7 bug:
@@ -143,7 +147,7 @@ class BuildSaveModelTests(unittest.TestCase):
             base_bindings=self.base_bindings,
         )
         self.assertEqual(new_bindings["bindings"]["mic"]["kind"], "voice")
-        self.assertEqual(new_config["voice_hotkey"], "win+h")
+        self.assertEqual(new_config["voice_hotkey"], "ctrl+shift+u")
 
     def test_invalid_hotkey_raises_with_no_button_id(self):
         with self.assertRaises(SettingsValidationError) as ctx:
@@ -207,6 +211,31 @@ class BuildSaveModelTests(unittest.TestCase):
         self.assertEqual(self.base_config, base_config_copy)
         self.assertEqual(self.base_bindings, base_bindings_copy)
 
+    def test_selected_dji_profile_is_persisted_without_overwriting_rc003_bindings(self):
+        new_config, new_bindings = build_save_model(
+            button_display_map={"power": "escape"},
+            hotkey_text="win+h",
+            trigger_mode=key_mapping.VoiceTriggerMode.TOGGLE,
+            endpoint_display_text="",
+            base_config=self.base_config,
+            base_bindings=self.base_bindings,
+            selected_device_profile="dji-mic-2",
+        )
+        self.assertEqual(new_config["selected_device_profile"], "dji-mic-2")
+        self.assertEqual(new_bindings["bindings"]["power"]["keys"], ["escape"])
+
+    def test_unknown_device_profile_falls_back_to_rc003(self):
+        new_config, _ = build_save_model(
+            button_display_map={},
+            hotkey_text="win+h",
+            trigger_mode=key_mapping.VoiceTriggerMode.TOGGLE,
+            endpoint_display_text="",
+            base_config=self.base_config,
+            base_bindings=self.base_bindings,
+            selected_device_profile="invented-device",
+        )
+        self.assertEqual(new_config["selected_device_profile"], "xiaomi-rc003")
+
 
 class DefaultDisplayStateTests(unittest.TestCase):
     def test_covers_every_user_facing_button(self):
@@ -233,6 +262,123 @@ class DefaultDisplayStateTests(unittest.TestCase):
     def test_trigger_mode_defaults_to_toggle_label(self):
         state = default_display_state()
         self.assertIn("toggle", state.trigger_mode_label)
+
+
+class DescribeLaunchResultTests(unittest.TestCase):
+    """XRBM-029: settings_ui's status text for each of the four required
+    stable bridge-launch states, built directly on the same
+    bridge_launcher.LaunchResult values tests/test_bridge_launcher.py
+    proves get produced - no Tk, no subprocess.
+    """
+
+    def test_not_started_text_is_a_fixed_constant_shown_before_any_launch(self):
+        self.assertIn("未启动", LAUNCH_NOT_STARTED_TEXT)
+
+    def test_started_never_claims_rc003_is_connected(self):
+        result = bridge_launcher.LaunchResult(
+            outcome=bridge_launcher.LaunchOutcome.STARTED,
+            command=("exe",),
+            pid=123,
+        )
+        text = describe_launch_result(result)
+        self.assertIn("123", text)
+        self.assertNotIn("RC003 已连接", text)
+        self.assertNotIn("已连接", text)
+
+    def test_already_running_mentions_the_exit_code_and_is_distinct_from_quick_exit(self):
+        result = bridge_launcher.LaunchResult(
+            outcome=bridge_launcher.LaunchOutcome.ALREADY_RUNNING,
+            command=("exe",),
+            exit_code=single_instance.DUPLICATE_INSTANCE_EXIT_CODE,
+        )
+        already_running_text = describe_launch_result(result)
+        self.assertIn(str(single_instance.DUPLICATE_INSTANCE_EXIT_CODE), already_running_text)
+
+        quick_exit_result = bridge_launcher.LaunchResult(
+            outcome=bridge_launcher.LaunchOutcome.QUICK_EXIT,
+            command=("exe",),
+            exit_code=1,
+        )
+        quick_exit_text = describe_launch_result(quick_exit_result)
+        self.assertNotEqual(already_running_text, quick_exit_text)
+
+    def test_quick_exit_preserves_the_real_exit_code_and_points_at_the_log(self):
+        result = bridge_launcher.LaunchResult(
+            outcome=bridge_launcher.LaunchOutcome.QUICK_EXIT,
+            command=("exe",),
+            exit_code=9,
+        )
+        text = describe_launch_result(result)
+        self.assertIn("9", text)
+        self.assertIn("日志", text)
+
+    def test_launch_failed_surfaces_the_error_and_points_at_the_log(self):
+        result = bridge_launcher.LaunchResult(
+            outcome=bridge_launcher.LaunchOutcome.LAUNCH_FAILED,
+            command=("exe",),
+            error="[WinError 2] The system cannot find the file specified",
+        )
+        text = describe_launch_result(result)
+        self.assertIn("WinError 2", text)
+        self.assertIn("日志", text)
+
+
+class DescribeLogOpenResultTests(unittest.TestCase):
+    def test_opened_ready_mentions_the_directory(self):
+        directory = Path("/tmp/example/logs")
+        location = logging_setup.LogLocation(
+            status=logging_setup.LogLocationStatus.READY,
+            directory=directory,
+            file_path=directory / "app.log",
+        )
+        result = logging_setup.LogOpenResult(
+            outcome=logging_setup.LogOpenOutcome.OPENED, location=location
+        )
+        text = describe_log_open_result(result)
+        self.assertIn(str(directory), text)
+
+    def test_opened_but_file_missing_gives_an_honest_note_not_an_error(self):
+        directory = Path("/tmp/example/logs")
+        location = logging_setup.LogLocation(
+            status=logging_setup.LogLocationStatus.FILE_MISSING,
+            directory=directory,
+            file_path=directory / "app.log",
+        )
+        result = logging_setup.LogOpenResult(
+            outcome=logging_setup.LogOpenOutcome.OPENED, location=location
+        )
+        text = describe_log_open_result(result)
+        self.assertIn("app.log", text)
+        self.assertIn("还没有运行", text)
+
+    def test_directory_missing_does_not_claim_a_log_exists(self):
+        directory = Path("/tmp/example/logs")
+        location = logging_setup.LogLocation(
+            status=logging_setup.LogLocationStatus.DIRECTORY_MISSING,
+            directory=directory,
+            file_path=directory / "app.log",
+        )
+        result = logging_setup.LogOpenResult(
+            outcome=logging_setup.LogOpenOutcome.DIRECTORY_MISSING, location=location
+        )
+        text = describe_log_open_result(result)
+        self.assertIn(str(directory), text)
+        self.assertIn("没有运行", text)
+
+    def test_open_failed_surfaces_the_underlying_error(self):
+        directory = Path("/tmp/example/logs")
+        location = logging_setup.LogLocation(
+            status=logging_setup.LogLocationStatus.READY,
+            directory=directory,
+            file_path=directory / "app.log",
+        )
+        result = logging_setup.LogOpenResult(
+            outcome=logging_setup.LogOpenOutcome.OPEN_FAILED,
+            location=location,
+            error="no shell association available",
+        )
+        text = describe_log_open_result(result)
+        self.assertIn("no shell association available", text)
 
 
 if __name__ == "__main__":
