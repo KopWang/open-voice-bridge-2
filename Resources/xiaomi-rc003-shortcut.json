@@ -6,8 +6,8 @@
   "vendor": "Xiaomi",
   "model": "RC003",
   "support": {
-    "status": "research",
-    "notes": "The controller-only macOS adapter is awaiting final installed-app real-device acceptance."
+    "status": "implemented",
+    "notes": "Accepted on a physical RC003: the installed macOS app received the microphone-button HID edges and toggled Typeless recording through Control+Option."
   },
   "identity": {
     "bluetoothNames": [
@@ -24,8 +24,8 @@
     {
       "kind": "bluetooth-hid",
       "role": "button-input",
-      "status": "research",
-      "notes": "The app reads report 1 through IOHID and does not open the device microphone or a BLE GATT connection."
+      "status": "implemented",
+      "notes": "The installed app reads RC003 report 1 through IOHID and does not open the device microphone or a BLE GATT connection."
     }
   ],
   "capabilities": [
@@ -35,8 +35,8 @@
   "platforms": [
     {
       "platform": "macos",
-      "status": "research",
-      "notes": "Universal build and automated gates pass; installed-app RC003 and Typeless acceptance remains."
+      "status": "implemented",
+      "notes": "Accepted on macOS 26.5.2 with an Apple M4 Mac, Typeless 2.1.0, and DJI Mic Mini-DD2942 as Typeless's direct audio input."
     },
     {
       "platform": "windows",
