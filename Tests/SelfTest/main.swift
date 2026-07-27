@@ -332,6 +332,7 @@ check(
     RemoteButton.usageMap == [
         0x28: .ok,
         0x35: .tv,
+        0x3E: .microphone,
         0x4A: .home,
         0x4F: .right,
         0x50: .left,
@@ -2008,6 +2009,63 @@ check(
         !ExternalMicrophoneProfile.isDJIMic2(displayName: "Built-in Microphone"),
     "DJI Mic 2 identity: rejects lookalikes and unrelated microphones"
 )
+
+// MARK: - Controller-only shortcut value model
+
+check(
+    RemoteButton.allCases.count == 13 &&
+        RemoteButton.usageMap[0x003E] == .microphone &&
+        RemoteButton.microphone.nativeEvent == .keyboard(keyCode: 96),
+    "RC003 microphone button is a first-class mapped control"
+)
+
+let modifierOnlyChord = KeyChord(modifiers: [.control, .option], key: nil)
+check(
+    modifierOnlyChord?.displayName == "Control + Option",
+    "shortcut model accepts and formats modifier-only chords"
+)
+check(
+    KeyChord(modifiers: [], key: nil) == nil,
+    "shortcut model rejects an empty chord"
+)
+
+let commandShiftK = KeyChord(
+    modifiers: [.command, .shift],
+    key: ShortcutKey(keyCode: 40, displayName: "K")
+)
+do {
+    let bindings: [ShortcutBinding] = [
+        .disabled,
+        .chord(modifierOnlyChord!),
+        .chord(commandShiftK!),
+        .system(.volumeUp),
+    ]
+    let encoded = try JSONEncoder().encode(bindings)
+    let decoded = try JSONDecoder().decode([ShortcutBinding].self, from: encoded)
+    check(decoded == bindings, "shortcut bindings survive a Codable round trip")
+} catch {
+    check(false, "shortcut bindings survive a Codable round trip")
+}
+
+let shortcutSuiteName = "RemoteShortcutBridge.SelfTest.\(UUID().uuidString)"
+if let shortcutDefaults = UserDefaults(suiteName: shortcutSuiteName) {
+    defer { shortcutDefaults.removePersistentDomain(forName: shortcutSuiteName) }
+    let shortcutSettings = ShortcutBridgeSettings(defaults: shortcutDefaults)
+    check(
+        ShortcutBridgeSettings.defaultBindings.count == 13 &&
+            shortcutSettings.binding(for: .microphone) == .chord(modifierOnlyChord!),
+        "controller settings cover all buttons and default voice to Control + Option"
+    )
+    shortcutSettings.setBinding(.disabled, for: .microphone)
+    let reloadedShortcutSettings = ShortcutBridgeSettings(defaults: shortcutDefaults)
+    check(
+        reloadedShortcutSettings.binding(for: .microphone) == .disabled &&
+            reloadedShortcutSettings.binding(for: .up) != .disabled,
+        "controller shortcut settings persist and merge with defaults"
+    )
+} else {
+    check(false, "controller shortcut settings persist and merge with defaults")
+}
 
 print("RESULT passed=\(passed) failed=\(failed)")
 if failed > 0 {

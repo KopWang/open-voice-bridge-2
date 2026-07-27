@@ -26,10 +26,17 @@ struct RemoteButtonsTests {
         }
     }
 
+    @Test func exposesAllThirteenPhysicalControlsThroughOneUsageMap() {
+        #expect(RemoteButton.allCases.count == 13)
+        #expect(RemoteButton.usageMap[0x003E] == .microphone)
+        #expect(RemoteButton.microphone.nativeEvent == .keyboard(keyCode: 96))
+    }
+
     @Test func usesVerifiedRC003UsageTable() {
         #expect(RemoteButton.usageMap == [
             0x28: .ok,
             0x35: .tv,
+            0x3E: .microphone,
             0x4A: .home,
             0x4F: .right,
             0x50: .left,

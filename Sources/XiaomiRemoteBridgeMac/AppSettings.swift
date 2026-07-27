@@ -209,6 +209,7 @@ final class AppSettings: ObservableObject {
     }
 
     static let defaultBindings: [RemoteButton: ButtonAction] = [
+        .microphone: .disabled,
         .power: .escape,
         .up: .arrowUp,
         .left: .arrowLeft,

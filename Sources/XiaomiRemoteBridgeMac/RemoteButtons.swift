@@ -1,6 +1,7 @@
 import Foundation
 
 enum RemoteButton: String, CaseIterable, Codable, Identifiable {
+    case microphone
     case power
     case up
     case left
@@ -18,6 +19,7 @@ enum RemoteButton: String, CaseIterable, Codable, Identifiable {
 
     var hidUsage: UInt16 {
         switch self {
+        case .microphone: return 0x3E
         case .power: return 0x66
         case .up: return 0x52
         case .left: return 0x50
@@ -35,6 +37,7 @@ enum RemoteButton: String, CaseIterable, Codable, Identifiable {
 
     var shortLabel: String {
         switch self {
+        case .microphone: return "语音"
         case .power: return "电源"
         case .up: return "上"
         case .left: return "左"
@@ -52,6 +55,7 @@ enum RemoteButton: String, CaseIterable, Codable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .microphone: return "语音键"
         case .power: return "电源键"
         case .up: return "上键"
         case .left: return "左键"
@@ -73,6 +77,7 @@ enum RemoteButton: String, CaseIterable, Codable, Identifiable {
 
     var nativeEvent: RemoteNativeEvent? {
         switch self {
+        case .microphone: return .keyboard(keyCode: 96)
         case .ok: return .keyboard(keyCode: 36)
         case .tv: return .keyboard(keyCode: 50)
         case .home: return .keyboard(keyCode: 115)
