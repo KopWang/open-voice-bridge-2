@@ -60,6 +60,20 @@ enum KeyboardInjector {
         return true
     }
 
+    @discardableResult
+    static func send(_ action: SystemAction) -> Bool {
+        switch action {
+        case .volumeUp:
+            return send(ButtonAction.volumeUp)
+        case .volumeDown:
+            return send(ButtonAction.volumeDown)
+        case .showDesktop:
+            return send(ButtonAction.showDesktop)
+        case .contextMenu:
+            return send(ButtonAction.contextMenu)
+        }
+    }
+
     private static func postKey(code: CGKeyCode, flags: CGEventFlags = []) {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),

@@ -2067,6 +2067,123 @@ if let shortcutDefaults = UserDefaults(suiteName: shortcutSuiteName) {
     check(false, "controller shortcut settings persist and merge with defaults")
 }
 
+final class RecordingShortcutEventSink: ShortcutEventSink {
+    var events: [ShortcutEvent] = []
+
+    func post(_ event: ShortcutEvent) -> Bool {
+        events.append(event)
+        return true
+    }
+}
+
+final class FailingShortcutEventSink: ShortcutEventSink {
+    var events: [ShortcutEvent] = []
+    private let failingIndex: Int
+    private var index = 0
+
+    init(failingIndex: Int) {
+        self.failingIndex = failingIndex
+    }
+
+    func post(_ event: ShortcutEvent) -> Bool {
+        defer { index += 1 }
+        guard index != failingIndex else { return false }
+        events.append(event)
+        return true
+    }
+}
+
+let modifierSink = RecordingShortcutEventSink()
+let modifierEmitter = ShortcutEmitter(sink: modifierSink)
+_ = modifierEmitter.handle(
+    .down,
+    button: .microphone,
+    binding: .chord(modifierOnlyChord!)
+)
+_ = modifierEmitter.handle(
+    .up,
+    button: .microphone,
+    binding: .chord(modifierOnlyChord!)
+)
+check(
+    modifierSink.events == [
+        .modifier(.control, isDown: true, activeModifiers: [.control]),
+        .modifier(.option, isDown: true, activeModifiers: [.control, .option]),
+        .modifier(.option, isDown: false, activeModifiers: [.control]),
+        .modifier(.control, isDown: false, activeModifiers: []),
+    ],
+    "shortcut emitter orders a modifier-only press and release deterministically"
+)
+
+let keySink = RecordingShortcutEventSink()
+let keyEmitter = ShortcutEmitter(sink: keySink)
+_ = keyEmitter.handle(.up, button: .tv, binding: .chord(commandShiftK!))
+_ = keyEmitter.handle(.down, button: .tv, binding: .chord(commandShiftK!))
+_ = keyEmitter.handle(.down, button: .tv, binding: .chord(commandShiftK!))
+_ = keyEmitter.handle(.up, button: .tv, binding: .chord(commandShiftK!))
+check(
+    keySink.events == [
+        .modifier(.shift, isDown: true, activeModifiers: [.shift]),
+        .modifier(.command, isDown: true, activeModifiers: [.shift, .command]),
+        .key(
+            ShortcutKey(keyCode: 40, displayName: "K"),
+            isDown: true,
+            activeModifiers: [.shift, .command]
+        ),
+        .key(
+            ShortcutKey(keyCode: 40, displayName: "K"),
+            isDown: false,
+            activeModifiers: [.shift, .command]
+        ),
+        .modifier(.command, isDown: false, activeModifiers: [.shift]),
+        .modifier(.shift, isDown: false, activeModifiers: []),
+    ],
+    "shortcut emitter ignores stray and duplicate edges while preserving key order"
+)
+
+let cleanupSink = RecordingShortcutEventSink()
+let cleanupEmitter = ShortcutEmitter(sink: cleanupSink)
+_ = cleanupEmitter.handle(
+    .down,
+    button: .microphone,
+    binding: .chord(modifierOnlyChord!)
+)
+_ = cleanupEmitter.replaceBinding(for: .microphone)
+let eventsAfterReplacement = cleanupSink.events
+_ = cleanupEmitter.handle(
+    .down,
+    button: .microphone,
+    binding: .chord(modifierOnlyChord!)
+)
+_ = cleanupEmitter.forceReleaseAll(reason: "self_test")
+check(
+    eventsAfterReplacement.suffix(2) == [
+        .modifier(.option, isDown: false, activeModifiers: [.control]),
+        .modifier(.control, isDown: false, activeModifiers: []),
+    ] &&
+        cleanupSink.events.suffix(2) == [
+            .modifier(.option, isDown: false, activeModifiers: [.control]),
+            .modifier(.control, isDown: false, activeModifiers: []),
+        ],
+    "shortcut emitter force-releases held modifiers on replacement and teardown"
+)
+
+let failingSink = FailingShortcutEventSink(failingIndex: 1)
+let failingEmitter = ShortcutEmitter(sink: failingSink)
+let failedPressResult = failingEmitter.handle(
+    .down,
+    button: .microphone,
+    binding: .chord(modifierOnlyChord!)
+)
+check(
+    !failedPressResult &&
+        failingSink.events == [
+            .modifier(.control, isDown: true, activeModifiers: [.control]),
+            .modifier(.control, isDown: false, activeModifiers: []),
+        ],
+    "shortcut emitter rolls back a partially posted chord without phantom flags"
+)
+
 print("RESULT passed=\(passed) failed=\(failed)")
 if failed > 0 {
     exit(1)

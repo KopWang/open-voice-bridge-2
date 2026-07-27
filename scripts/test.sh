@@ -32,6 +32,7 @@ xcrun swiftc \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/RemoteButtons.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutBinding.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutBridgeSettings.swift" \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutEmitter.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/AppSettings.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/LaunchAtLoginManager.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/VoiceFunctionKeyLatch.swift" \
