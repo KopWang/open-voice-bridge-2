@@ -1,25 +1,19 @@
-Open Voice Bridge
-Copyright (C) 2026 Open Voice Bridge contributors
+Remote Shortcut Bridge
+Copyright (C) 2026 Remote Shortcut Bridge contributors
 
-The first implemented adapter, XiaomiRemoteBridgeMac, is a macOS adaptation
-informed by the GPL-3.0 project:
+This repository is a controller-only fork of:
+https://github.com/nijez/open-voice-bridge
+
+The RC003 HID identity and usage mapping were informed by the GPL-3.0-only
+project:
 https://github.com/xxb26553663-star/remote-bridge-hub
 
 Reference revision:
 8a93f321ac71a602300c6cd77f7256fa4b63068e
 
-Changes include a native SwiftUI menu bar host, CoreBluetooth state machine,
-CoreAudio output selection, IOHID permission gating, macOS key injection,
-packaging, and macOS-focused tests. The adapted work is distributed under
-GPL-3.0-only. See LICENSE and THIRD_PARTY_NOTICES.md.
+This fork adds arbitrary shortcut recording, modifier-only chords, a
+controller-only runtime, a compact native macOS interface, local signing, and
+test DMG packaging. It does not use the RC003 microphone or an audio bridge.
 
-A Windows source/build candidate for the same device, apps/windows/rc003,
-is a clean-room Python reimplementation informed by reading (read-only) the
-same GPL-3.0 reference project and revision above. It does not copy any
-upstream source lines; it reuses only interoperability facts (GATT UUIDs,
-control opcodes, IMA/DVI ADPCM tables, HID usage IDs, VID/PID values). It
-does not include the upstream VB-CABLE packaging, Frida injection, other
-device bridges (T1/V60), or commercial branding. See
-apps/windows/rc003/ATTRIBUTION.md for the file-by-file provenance record.
-This candidate has not completed real-Windows-device acceptance; see
-apps/windows/rc003/README.md, in particular its "Known gaps" section.
+The adapted work is distributed under GPL-3.0-only. See LICENSE and
+THIRD_PARTY_NOTICES.md.

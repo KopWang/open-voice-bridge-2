@@ -1,0 +1,56 @@
+{
+  "$schema": "../specs/device-profile.schema.json",
+  "schemaVersion": 1,
+  "id": "xiaomi-rc003",
+  "displayName": "Xiaomi Bluetooth Remote 2 Pro / RC003",
+  "vendor": "Xiaomi",
+  "model": "RC003",
+  "support": {
+    "status": "research",
+    "notes": "The controller-only macOS adapter is awaiting final installed-app real-device acceptance."
+  },
+  "identity": {
+    "bluetoothNames": [
+      "MI RC",
+      "Xiaomi Bluetooth Remote 2 Pro",
+      "小米蓝牙语音遥控器"
+    ],
+    "hid": {
+      "vendorId": 10007,
+      "productId": 12984
+    }
+  },
+  "transports": [
+    {
+      "kind": "bluetooth-hid",
+      "role": "button-input",
+      "status": "research",
+      "notes": "The app reads report 1 through IOHID and does not open the device microphone or a BLE GATT connection."
+    }
+  ],
+  "capabilities": [
+    "button-input",
+    "host-key-mapping"
+  ],
+  "platforms": [
+    {
+      "platform": "macos",
+      "status": "research",
+      "notes": "Universal build and automated gates pass; installed-app RC003 and Typeless acceptance remains."
+    },
+    {
+      "platform": "windows",
+      "status": "unsupported",
+      "notes": "This fork does not ship a Windows application."
+    },
+    {
+      "platform": "linux",
+      "status": "unsupported",
+      "notes": "This fork does not ship a Linux application."
+    }
+  ],
+  "sources": [
+    "https://github.com/nijez/open-voice-bridge",
+    "https://github.com/xxb26553663-star/remote-bridge-hub"
+  ]
+}
