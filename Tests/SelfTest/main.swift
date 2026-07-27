@@ -2184,6 +2184,54 @@ check(
     "shortcut emitter rolls back a partially posted chord without phantom flags"
 )
 
+var recordedModifierOnly: KeyChord?
+let modifierRecorder = ShortcutRecorder()
+modifierRecorder.onComplete = { recordedModifierOnly = $0 }
+modifierRecorder.start()
+modifierRecorder.handleFlagsChanged([.control])
+modifierRecorder.handleFlagsChanged([.control, .option])
+modifierRecorder.handleFlagsChanged([.control])
+modifierRecorder.handleFlagsChanged([])
+check(
+    recordedModifierOnly == modifierOnlyChord,
+    "shortcut recorder captures the largest modifier-only chord on release"
+)
+
+var recordedCommandShiftK: KeyChord?
+let keyRecorder = ShortcutRecorder()
+keyRecorder.onComplete = { recordedCommandShiftK = $0 }
+keyRecorder.start()
+keyRecorder.handleFlagsChanged([.command, .shift])
+keyRecorder.handleKeyDown(
+    ShortcutKey(keyCode: 40, displayName: "K"),
+    modifiers: [.command, .shift]
+)
+keyRecorder.handleKeyUp(
+    ShortcutKey(keyCode: 40, displayName: "K"),
+    modifiers: [.command, .shift]
+)
+keyRecorder.handleFlagsChanged([])
+check(
+    recordedCommandShiftK == commandShiftK,
+    "shortcut recorder captures a modifier-plus-key chord"
+)
+
+var recorderCancelled = false
+var syntheticCompleted = false
+let cancellingRecorder = ShortcutRecorder()
+cancellingRecorder.onCancel = { recorderCancelled = true }
+cancellingRecorder.onComplete = { _ in syntheticCompleted = true }
+cancellingRecorder.start()
+cancellingRecorder.handleFlagsChanged([.command], isSynthetic: true)
+cancellingRecorder.handleKeyDown(
+    ShortcutKey(keyCode: 53, displayName: "Escape"),
+    modifiers: []
+)
+check(
+    recorderCancelled && !syntheticCompleted,
+    "shortcut recorder ignores synthetic events and Escape cancels"
+)
+
 print("RESULT passed=\(passed) failed=\(failed)")
 if failed > 0 {
     exit(1)
