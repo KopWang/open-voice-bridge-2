@@ -108,7 +108,7 @@ final class LaunchAtLoginManager: ObservableObject {
 
     init(
         bundleIdentifier: String = Bundle.main.bundleIdentifier
-            ?? "com.kingwell.XiaomiRemoteBridgeMac",
+            ?? "com.kopwang.RemoteShortcutBridge",
         bundleURL: URL = Bundle.main.bundleURL,
         fileManager: FileManager = .default,
         userID: uid_t = getuid(),

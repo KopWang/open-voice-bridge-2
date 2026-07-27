@@ -23,6 +23,37 @@ if plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$INFO_PLIST" >/de
 fi
 print "PASS Remote Shortcut Bridge product and privacy identity"
 
+PRODUCTION_SOURCES=(
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutBridgeAppModel.swift"
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutBridgeRuntime.swift"
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutSettingsView.swift"
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/XiaomiRemoteBridgeMacApp.swift"
+)
+if rg -q \
+  'XiaomiBluetoothBridge|VirtualAudioOutput|LocalMicrophoneBridge|RemoteVoiceFunctionMapper|RemoteVoiceKeyMonitor' \
+  "${PRODUCTION_SOURCES[@]}"; then
+  print -u2 "FAIL production controller path constructs an audio or Bluetooth service"
+  exit 1
+fi
+if ! rg -Fq 'private let model = ShortcutBridgeAppModel()' \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/XiaomiRemoteBridgeMacApp.swift"; then
+  print -u2 "FAIL production app does not construct ShortcutBridgeAppModel"
+  exit 1
+fi
+if rg -Fq 'private let model = BridgeAppModel()' \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/XiaomiRemoteBridgeMacApp.swift"; then
+  print -u2 "FAIL production app still constructs the legacy bridge model"
+  exit 1
+fi
+if ! rg -Fq 'com.kopwang.RemoteShortcutBridge' \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/LaunchAtLoginManager.swift" ||
+   ! rg -Fq 'appendingPathComponent("RemoteShortcutBridge"' \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/AppLogger.swift"; then
+  print -u2 "FAIL login or logging identity still uses the legacy product"
+  exit 1
+fi
+print "PASS production wiring is controller-only"
+
 mkdir -p "${OUTPUT:h}"
 xcrun swiftc \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ATVVProtocol.swift" \

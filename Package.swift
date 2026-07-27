@@ -18,7 +18,14 @@ let package = Package(
         .testTarget(
             name: "XiaomiRemoteBridgeMacTests",
             dependencies: ["XiaomiRemoteBridgeMac"],
-            path: "Tests/XiaomiRemoteBridgeMacTests"
+            path: "Tests/XiaomiRemoteBridgeMacTests",
+            exclude: [
+                // Apple's standalone Command Line Tools omit XCTest. The same
+                // contract is covered by Tests/SelfTest and the profile validator.
+                "DeviceProfileCatalogTests.swift",
+                "ExternalMicrophoneProfileTests.swift",
+                "LocalMicrophoneArbitrationTests.swift",
+            ]
         ),
     ],
     swiftLanguageModes: [SwiftLanguageMode.v5]

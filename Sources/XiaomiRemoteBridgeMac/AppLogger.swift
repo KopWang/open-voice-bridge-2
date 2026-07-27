@@ -10,7 +10,7 @@ final class AppLogger {
     private init() {
         let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs", isDirectory: true)
-            .appendingPathComponent("XiaomiRemoteBridgeMac", isDirectory: true)
+            .appendingPathComponent("RemoteShortcutBridge", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         logURL = base.appendingPathComponent("runtime.log")
     }
