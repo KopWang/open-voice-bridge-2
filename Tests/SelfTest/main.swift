@@ -2232,6 +2232,36 @@ check(
     "shortcut recorder ignores synthetic events and Escape cancels"
 )
 
+var shortcutEdgeTracker = RemoteButtonEdgeTracker()
+check(
+    shortcutEdgeTracker.update(usages: [0x003E]) == [
+        RemoteButtonTransition(button: .microphone, edge: .down),
+    ] &&
+        shortcutEdgeTracker.update(usages: [0x003E]).isEmpty &&
+        shortcutEdgeTracker.update(usages: []) == [
+            RemoteButtonTransition(button: .microphone, edge: .up),
+        ],
+    "controller HID edge tracker debounces the microphone button"
+)
+
+let everyControllerUsage = Set(RemoteButton.usageMap.keys)
+let allDownTransitions = shortcutEdgeTracker.update(usages: everyControllerUsage)
+let allUpTransitions = shortcutEdgeTracker.update(usages: [])
+check(
+    Set(allDownTransitions.map(\.button)) == Set(RemoteButton.allCases) &&
+        allDownTransitions.allSatisfy { $0.edge == .down } &&
+        Set(allUpTransitions.map(\.button)) == Set(RemoteButton.allCases) &&
+        allUpTransitions.allSatisfy { $0.edge == .up },
+    "all 13 RC003 controls traverse one HID edge tracker"
+)
+
+check(
+    RC003ControllerIdentity.vendorID == 0x2717 &&
+        RC003ControllerIdentity.productID == 0x32B8 &&
+        RC003ControllerIdentity.reportID == 1,
+    "controller runtime pins the verified RC003 HID identity"
+)
+
 print("RESULT passed=\(passed) failed=\(failed)")
 if failed > 0 {
     exit(1)
