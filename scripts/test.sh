@@ -4,6 +4,25 @@ set -euo pipefail
 ROOT="${0:A:h:h}"
 OUTPUT="$ROOT/.build/self-test/XiaomiRemoteBridgeMacSelfTest"
 
+"$ROOT/scripts/swift-package.sh" package dump-package >/dev/null
+
+INFO_PLIST="$ROOT/Resources/Info.plist"
+test "$(plutil -extract CFBundleDisplayName raw -o - "$INFO_PLIST")" = "遥控快捷桥"
+test "$(plutil -extract CFBundleName raw -o - "$INFO_PLIST")" = "RemoteShortcutBridge"
+test "$(plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")" = \
+  "com.kopwang.RemoteShortcutBridge"
+test "$(plutil -extract CFBundleShortVersionString raw -o - "$INFO_PLIST")" = "0.1.0"
+test "$(plutil -extract CFBundleVersion raw -o - "$INFO_PLIST")" = "1"
+if plutil -extract NSMicrophoneUsageDescription raw -o - "$INFO_PLIST" >/dev/null 2>&1; then
+  print -u2 "FAIL controller-only app still declares microphone access"
+  exit 1
+fi
+if plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$INFO_PLIST" >/dev/null 2>&1; then
+  print -u2 "FAIL controller-only app still declares application Bluetooth access"
+  exit 1
+fi
+print "PASS Remote Shortcut Bridge product and privacy identity"
+
 mkdir -p "${OUTPUT:h}"
 xcrun swiftc \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ATVVProtocol.swift" \
@@ -87,4 +106,4 @@ if ! rg -q 'AudioDiagnosticsRefreshController' \
 fi
 print "PASS BridgeAppModel delegates diagnostics scheduling to one lifecycle controller"
 
-xcrun swift build
+"$ROOT/scripts/swift-package.sh" build

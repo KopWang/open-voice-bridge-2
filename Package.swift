@@ -21,5 +21,5 @@ let package = Package(
             path: "Tests/XiaomiRemoteBridgeMacTests"
         ),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [SwiftLanguageMode.v5]
 )
