@@ -36,3 +36,18 @@ struct RemoteButtonEdgeTracker {
         activeUsages.removeAll()
     }
 }
+
+enum HIDReportDiagnostics {
+    static func describe(
+        reportID: UInt32,
+        data: Data,
+        pressed: Set<RemoteButton>
+    ) -> String {
+        let raw = data.map { String(format: "%02x", $0) }.joined()
+        let names = RemoteButton.allCases
+            .filter(pressed.contains)
+            .map(\.rawValue)
+            .joined(separator: ",")
+        return "report=\(reportID) raw=\(raw) pressed=\(names)"
+    }
+}

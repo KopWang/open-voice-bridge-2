@@ -1,9 +1,14 @@
 import AppKit
 import SwiftUI
 
+private enum ShortcutCaptureTarget: Hashable {
+    case button(RemoteButton)
+    case combination(RemoteButtonChord)
+}
+
 @MainActor
 private final class ShortcutCaptureModel: ObservableObject {
-    @Published private(set) var recordingButton: RemoteButton?
+    @Published private(set) var recordingTarget: ShortcutCaptureTarget?
     @Published private(set) var preview = ""
 
     private let recorder = ShortcutRecorder()
@@ -27,12 +32,12 @@ private final class ShortcutCaptureModel: ObservableObject {
     }
 
     func begin(
-        for button: RemoteButton,
+        for target: ShortcutCaptureTarget,
         onComplete: @escaping (KeyChord) -> Void
     ) {
         cancel()
         completion = onComplete
-        recordingButton = button
+        recordingTarget = target
         guard eventTap.start(handler: { [weak self] type, event in
             self?.handle(type: type, event: event)
         }) else {
@@ -43,7 +48,7 @@ private final class ShortcutCaptureModel: ObservableObject {
     }
 
     func cancel() {
-        guard recordingButton != nil || eventTap.isRunning else { return }
+        guard recordingTarget != nil || eventTap.isRunning else { return }
         recorder.stop()
         finish(with: nil)
     }
@@ -53,7 +58,7 @@ private final class ShortcutCaptureModel: ObservableObject {
         completion = nil
         eventTap.stop()
         recorder.stop()
-        recordingButton = nil
+        recordingTarget = nil
         preview = ""
         if let chord {
             callback?(chord)
@@ -133,6 +138,8 @@ struct ShortcutSettingsView: View {
     @ObservedObject private var settings: ShortcutBridgeSettings
     @ObservedObject private var launchAtLogin: LaunchAtLoginManager
     @StateObject private var capture = ShortcutCaptureModel()
+    @State private var combinationFirst = RemoteButton.menu
+    @State private var combinationSecond = RemoteButton.up
 
     init(model: ShortcutBridgeAppModel) {
         self.model = model
@@ -146,6 +153,8 @@ struct ShortcutSettingsView: View {
                 header
                 Divider()
                 mappingSection
+                Divider()
+                combinationSection
                 Divider()
                 permissionsSection
                 Divider()
@@ -231,7 +240,8 @@ struct ShortcutSettingsView: View {
     }
 
     private func mappingRow(_ button: RemoteButton) -> some View {
-        let isRecording = capture.recordingButton == button
+        let target = ShortcutCaptureTarget.button(button)
+        let isRecording = capture.recordingTarget == target
         let binding = settings.binding(for: button)
 
         return HStack(spacing: 12) {
@@ -251,7 +261,7 @@ struct ShortcutSettingsView: View {
                 if isRecording {
                     capture.cancel()
                 } else {
-                    capture.begin(for: button) { chord in
+                    capture.begin(for: target) { chord in
                         model.setBinding(.chord(chord), for: button)
                     }
                 }
@@ -276,11 +286,19 @@ struct ShortcutSettingsView: View {
     }
 
     private func modifierMenu(for button: RemoteButton) -> some View {
+        modifierMenu {
+            model.setBinding($0, for: button)
+        }
+    }
+
+    private func modifierMenu(
+        onSelect: @escaping (ShortcutBinding) -> Void
+    ) -> some View {
         Menu {
-            modifierButton("Control", modifier: .control, for: button)
-            modifierButton("Option", modifier: .option, for: button)
-            modifierButton("Shift", modifier: .shift, for: button)
-            modifierButton("Command", modifier: .command, for: button)
+            modifierButton("Control", modifier: .control, onSelect: onSelect)
+            modifierButton("Option", modifier: .option, onSelect: onSelect)
+            modifierButton("Shift", modifier: .shift, onSelect: onSelect)
+            modifierButton("Command", modifier: .command, onSelect: onSelect)
         } label: {
             Image(systemName: "keyboard")
         }
@@ -292,15 +310,145 @@ struct ShortcutSettingsView: View {
     private func modifierButton(
         _ title: String,
         modifier: KeyModifier,
-        for button: RemoteButton
+        onSelect: @escaping (ShortcutBinding) -> Void
     ) -> some View {
         Button(title) {
             capture.cancel()
             guard let chord = KeyChord(modifiers: [modifier], key: nil) else {
                 return
             }
-            model.setBinding(.chord(chord), for: button)
+            onSelect(.chord(chord))
         }
+    }
+
+    private var combinationSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("组合按键")
+                    .font(.headline)
+                Spacer()
+                remoteButtonPicker(
+                    selection: $combinationFirst,
+                    excluding: combinationSecond
+                )
+                Text("+")
+                    .foregroundColor(.secondary)
+                remoteButtonPicker(
+                    selection: $combinationSecond,
+                    excluding: combinationFirst
+                )
+                Button {
+                    guard let chord = RemoteButtonChord(
+                        buttons: [combinationFirst, combinationSecond]
+                    ) else {
+                        return
+                    }
+                    model.setCombinationBinding(.disabled, for: chord)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("添加遥控器组合按键")
+                .disabled(
+                    combinationFirst == combinationSecond ||
+                        pendingCombinationAlreadyExists
+                )
+            }
+            .padding(.vertical, 15)
+
+            if settings.combinationBindings.isEmpty {
+                Text("未设置组合按键")
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 12)
+            } else {
+                ForEach(sortedCombinationChords) { chord in
+                    VStack(spacing: 0) {
+                        combinationRow(chord)
+                            .padding(.vertical, 8)
+                        if chord.id != sortedCombinationChords.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func remoteButtonPicker(
+        selection: Binding<RemoteButton>,
+        excluding excluded: RemoteButton
+    ) -> some View {
+        Picker("", selection: selection) {
+            ForEach(RemoteButton.allCases.filter { $0 != excluded }) { button in
+                Text(button.shortLabel).tag(button)
+            }
+        }
+        .labelsHidden()
+        .frame(width: 92)
+    }
+
+    private func combinationRow(_ chord: RemoteButtonChord) -> some View {
+        let target = ShortcutCaptureTarget.combination(chord)
+        let isRecording = capture.recordingTarget == target
+        let binding = settings.combinationBinding(for: chord) ?? .disabled
+
+        return HStack(spacing: 12) {
+            Text(chord.displayName)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 120, alignment: .leading)
+
+            Text(isRecording ? capture.preview : binding.displayName)
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(isRecording ? .accentColor : .primary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            modifierMenu {
+                model.setCombinationBinding($0, for: chord)
+            }
+
+            Button {
+                if isRecording {
+                    capture.cancel()
+                } else {
+                    capture.begin(for: target) { output in
+                        model.setCombinationBinding(
+                            .chord(output),
+                            for: chord
+                        )
+                    }
+                }
+            } label: {
+                Label(
+                    isRecording ? "取消" : "录制输出",
+                    systemImage: isRecording
+                        ? "xmark.circle"
+                        : "record.circle"
+                )
+            }
+            .frame(width: 112)
+
+            Button {
+                capture.cancel()
+                model.removeCombination(chord)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .help("删除 \(chord.displayName) 组合")
+        }
+        .frame(minHeight: 30)
+    }
+
+    private var sortedCombinationChords: [RemoteButtonChord] {
+        settings.combinationBindings.keys.sorted { $0.id < $1.id }
+    }
+
+    private var pendingCombinationAlreadyExists: Bool {
+        guard let chord = RemoteButtonChord(
+            buttons: [combinationFirst, combinationSecond]
+        ) else {
+            return false
+        }
+        return settings.combinationBindings[chord] != nil
     }
 
     private var permissionsSection: some View {

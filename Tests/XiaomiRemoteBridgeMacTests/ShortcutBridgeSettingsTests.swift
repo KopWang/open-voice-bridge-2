@@ -79,6 +79,42 @@ struct ShortcutBridgeSettingsTests {
         #expect(defaults.integer(forKey: "shortcutMappingSchemaVersion") == 2)
     }
 
+    @Test func remoteButtonChordRequiresTwoDistinctButtons() throws {
+        #expect(RemoteButtonChord(buttons: [.menu]) == nil)
+        let chord = try #require(
+            RemoteButtonChord(buttons: [.up, .menu, .up])
+        )
+        #expect(chord.buttons == [.menu, .up])
+        #expect(chord.displayName == "上 + 菜单")
+    }
+
+    @Test func combinationBindingsPersistIndependentlyFromSingles() throws {
+        let suiteName = "RemoteShortcutBridgeTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let chord = try #require(
+            RemoteButtonChord(buttons: [.menu, .up])
+        )
+        let output = try #require(
+            KeyChord(
+                modifiers: [.command, .shift],
+                key: ShortcutKey(keyCode: 40, displayName: "K")
+            )
+        )
+        let settings = ShortcutBridgeSettings(defaults: defaults)
+        settings.setCombinationBinding(.chord(output), for: chord)
+
+        let reloaded = ShortcutBridgeSettings(defaults: defaults)
+        #expect(reloaded.combinationBinding(for: chord) == .chord(output))
+        #expect(reloaded.binding(for: .menu) == settings.binding(for: .menu))
+        reloaded.resetBindings()
+        #expect(
+            ShortcutBridgeSettings(defaults: defaults)
+                .combinationBinding(for: chord) == nil
+        )
+    }
+
     private func save(
         _ bindings: [RemoteButton: ShortcutBinding],
         to defaults: UserDefaults

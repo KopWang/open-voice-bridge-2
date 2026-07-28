@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import IOKit
 import Testing
 @testable import XiaomiRemoteBridgeMac
@@ -45,6 +46,16 @@ struct ShortcutHIDRuntimeTests {
         #expect(
             KeyboardEventSuppressor.location.rawValue ==
                 CGEventTapLocation.cghidEventTap.rawValue
+        )
+    }
+
+    @Test func reportDiagnosticsExposeRawBytesAndFullPressedSet() {
+        #expect(
+            HIDReportDiagnostics.describe(
+                reportID: 1,
+                data: Data([0x65, 0x00, 0x52, 0x00, 0x00, 0x00]),
+                pressed: [.menu, .up]
+            ) == "report=1 raw=650052000000 pressed=up,menu"
         )
     }
 }

@@ -1,11 +1,22 @@
 import Foundation
 
+enum RuntimeLogTimestamp {
+    static func string(from date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds,
+        ]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: date)
+    }
+}
+
 final class AppLogger {
     static let shared = AppLogger()
 
     let logURL: URL
     private let queue = DispatchQueue(label: "XiaomiRemoteBridgeMac.logger")
-    private let formatter = ISO8601DateFormatter()
 
     private init() {
         let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
@@ -16,7 +27,7 @@ final class AppLogger {
     }
 
     func write(_ message: String) {
-        let line = "\(formatter.string(from: Date())) \(message)\n"
+        let line = "\(RuntimeLogTimestamp.string(from: Date())) \(message)\n"
         queue.async { [logURL] in
             let data = Data(line.utf8)
             if FileManager.default.fileExists(atPath: logURL.path),

@@ -62,9 +62,11 @@ xcrun swiftc \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/BluetoothLifecycle.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/RemoteButtons.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/RemoteButtonEdgeTracker.swift" \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/RemoteButtonChord.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutBinding.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutBridgeSettings.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutEmitter.swift" \
+  "$ROOT/Sources/XiaomiRemoteBridgeMac/RemoteInputRouter.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/ShortcutRecorder.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/AppSettings.swift" \
   "$ROOT/Sources/XiaomiRemoteBridgeMac/LaunchAtLoginManager.swift" \

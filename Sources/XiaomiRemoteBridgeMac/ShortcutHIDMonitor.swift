@@ -67,13 +67,11 @@ private func shortcutHIDInputReport(
 }
 
 final class ShortcutHIDMonitor {
-    private let settings: ShortcutBridgeSettings
-    private let emitter: ShortcutEmitter
+    private let router: RemoteInputRouter
     private let eventSuppressor = KeyboardEventSuppressor()
     private var manager: IOHIDManager?
     private var lifecycle = RemoteDeviceLifecycle()
     private var activeDevice: IOHIDDevice?
-    private var activeDeviceIsSeized = false
     private var edgeTracker = RemoteButtonEdgeTracker()
     private var permissionMonitor: DispatchSourceTimer?
 
@@ -97,9 +95,8 @@ final class ShortcutHIDMonitor {
         IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
     }
 
-    init(settings: ShortcutBridgeSettings, emitter: ShortcutEmitter) {
-        self.settings = settings
-        self.emitter = emitter
+    init(router: RemoteInputRouter) {
+        self.router = router
     }
 
     func start() {
@@ -185,12 +182,11 @@ final class ShortcutHIDMonitor {
     func stop(reason: String = "app_stop") {
         permissionMonitor?.cancel()
         permissionMonitor = nil
-        _ = emitter.forceReleaseAll(reason: reason)
+        _ = router.forceReleaseAll(reason: reason)
         edgeTracker.reset()
         eventSuppressor.stop()
 
         activeDevice = nil
-        activeDeviceIsSeized = false
         isExclusivelyReading = false
 
         if let manager {
@@ -224,10 +220,9 @@ final class ShortcutHIDMonitor {
             }
         case .present:
             activeDevice = device
-            activeDeviceIsSeized = false
             isExclusivelyReading = false
             edgeTracker.reset()
-            _ = emitter.forceReleaseAll(reason: "device_generation_changed")
+            _ = router.forceReleaseAll(reason: "device_generation_changed")
             setConnected(true)
             let detail = eventSuppressor.isRunning
                 ? "键盘模式"
@@ -240,10 +235,9 @@ final class ShortcutHIDMonitor {
     fileprivate func deviceDidRemove(device: IOHIDDevice) {
         guard let activeDevice, CFEqual(activeDevice, device) else { return }
         _ = lifecycle.removed()
-        _ = emitter.forceReleaseAll(reason: "device_removed")
+        _ = router.forceReleaseAll(reason: "device_removed")
         edgeTracker.reset()
         self.activeDevice = nil
-        activeDeviceIsSeized = false
         isExclusivelyReading = false
         setConnected(false)
         updateStatus("RC003 已断开；等待重新连接")
@@ -269,25 +263,27 @@ final class ShortcutHIDMonitor {
             return
         }
 
-        for transition in edgeTracker.update(usages: usages) {
-            if !activeDeviceIsSeized {
-                eventSuppressor.arm(
-                    button: transition.button,
-                    edge: transition.edge
-                )
-            }
-            let binding = settings.binding(for: transition.button)
-            guard emitter.handle(
-                transition.edge,
+        let pressed = Set(usages.compactMap { RemoteButton.usageMap[$0] })
+        let transitions = edgeTracker.update(usages: usages)
+        AppLogger.shared.write(
+            "HID REPORT " + HIDReportDiagnostics.describe(
+                reportID: reportID,
+                data: data,
+                pressed: pressed
+            )
+        )
+        for transition in transitions {
+            eventSuppressor.arm(
                 button: transition.button,
-                binding: binding
-            ) else {
-                releaseForRevokedPermissions()
-                return
-            }
+                edge: transition.edge
+            )
             AppLogger.shared.write(
                 "HID BUTTON edge=\(transition.edge) button=\(transition.button.rawValue)"
             )
+        }
+        guard router.update(pressed: pressed) else {
+            releaseForRevokedPermissions()
+            return
         }
     }
 

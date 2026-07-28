@@ -4,6 +4,7 @@ import Foundation
 final class ShortcutBridgeSettings: ObservableObject {
     private enum Keys {
         static let bindings = "shortcutBindings"
+        static let combinationBindings = "shortcutCombinationBindings"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
         static let mappingSchemaVersion = "shortcutMappingSchemaVersion"
     }
@@ -13,6 +14,12 @@ final class ShortcutBridgeSettings: ObservableObject {
 
     @Published private(set) var bindings: [RemoteButton: ShortcutBinding] {
         didSet { saveBindings() }
+    }
+
+    @Published private(set) var combinationBindings: [
+        RemoteButtonChord: ShortcutBinding
+    ] {
+        didSet { saveCombinationBindings() }
     }
 
     @Published var launchAtLoginEnabled: Bool {
@@ -48,6 +55,22 @@ final class ShortcutBridgeSettings: ObservableObject {
         }
         bindings = loadedBindings
 
+        if
+            let data = defaults.data(forKey: Keys.combinationBindings),
+            let decoded = try? JSONDecoder().decode(
+                [RemoteComboMapping].self,
+                from: data
+            )
+        {
+            combinationBindings = Dictionary(
+                uniqueKeysWithValues: decoded.map {
+                    ($0.chord, $0.binding)
+                }
+            )
+        } else {
+            combinationBindings = [:]
+        }
+
         saveBindings()
         defaults.set(
             Self.currentMappingSchemaVersion,
@@ -63,14 +86,42 @@ final class ShortcutBridgeSettings: ObservableObject {
         bindings[button] = binding
     }
 
+    func combinationBinding(
+        for chord: RemoteButtonChord
+    ) -> ShortcutBinding? {
+        combinationBindings[chord]
+    }
+
+    func setCombinationBinding(
+        _ binding: ShortcutBinding,
+        for chord: RemoteButtonChord
+    ) {
+        combinationBindings[chord] = binding
+    }
+
+    func removeCombination(_ chord: RemoteButtonChord) {
+        combinationBindings.removeValue(forKey: chord)
+    }
+
     func resetBindings() {
         bindings = Self.defaultBindings
+        combinationBindings = [:]
     }
 
     private func saveBindings() {
         let raw = Dictionary(uniqueKeysWithValues: bindings.map { ($0.key.rawValue, $0.value) })
         if let data = try? JSONEncoder().encode(raw) {
             defaults.set(data, forKey: Keys.bindings)
+        }
+    }
+
+    private func saveCombinationBindings() {
+        let mappings = combinationBindings.map {
+            RemoteComboMapping(chord: $0.key, binding: $0.value)
+        }
+        .sorted { $0.chord.id < $1.chord.id }
+        if let data = try? JSONEncoder().encode(mappings) {
+            defaults.set(data, forKey: Keys.combinationBindings)
         }
     }
 

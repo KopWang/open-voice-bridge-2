@@ -97,6 +97,17 @@ final class ShortcutBridgeAppModel: ObservableObject {
         runtime.setBinding(binding, for: button)
     }
 
+    func setCombinationBinding(
+        _ binding: ShortcutBinding,
+        for chord: RemoteButtonChord
+    ) {
+        runtime.setCombinationBinding(binding, for: chord)
+    }
+
+    func removeCombination(_ chord: RemoteButtonChord) {
+        runtime.removeCombination(chord)
+    }
+
     func restoreDefaultBindings() {
         runtime.resetBindings()
     }
