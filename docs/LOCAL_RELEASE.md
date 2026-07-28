@@ -7,8 +7,8 @@ not require an Apple Developer Program account or a Developer ID certificate.
 
 - App: `遥控快捷桥.app`
 - Bundle ID: `com.kopwang.RemoteShortcutBridge`
-- Version: `0.1.2 (3)`
-- Tag: `v0.1.2-test.3`
+- Version: `0.1.3 (4)`
+- Tag: `v0.1.3-test.4`
 - Signing name: `Remote Shortcut Bridge Local Code Signing`
 
 ## Build
@@ -32,8 +32,8 @@ the user's login password.
 
 ```text
 dist/遥控快捷桥.app
-dist/遥控快捷桥-0.1.2-test.3-macos.dmg
-dist/遥控快捷桥-0.1.2-test.3-macos.dmg.sha256
+dist/遥控快捷桥-0.1.3-test.4-macos.dmg
+dist/遥控快捷桥-0.1.3-test.4-macos.dmg.sha256
 ```
 
 The DMG includes the app, installation guide, GPL materials, and the
@@ -41,6 +41,6 @@ corresponding source archive.
 
 ## GitHub prerelease
 
-Create tag `v0.1.2-test.3`, mark the release as a prerelease, and attach the DMG
+Create tag `v0.1.3-test.4`, mark the release as a prerelease, and attach the DMG
 and checksum. State plainly that the build is locally signed and not notarized.
 Do not describe it as a public trusted macOS distribution.

@@ -34,6 +34,13 @@ The device may serialize two physical buttons instead of reporting an
 overlapping set. Raw report logging will distinguish that hardware limitation
 from software behavior. When reports overlap, no timing heuristic is used.
 
+Physical RC003 evidence confirmed serialized single-usage reports. For a button
+mapped to exactly one modifier, its output release therefore waits up to 500ms.
+If another remote key arrives in that interval, the modifier remains down until
+the follower key is released. This adapts the device transport while preserving
+real overlapping keyboard output; it does not turn arbitrary sequential
+buttons into an explicit input combination.
+
 ## Explicit remote combinations
 
 Settings store unordered remote-button chords containing two or more buttons.
