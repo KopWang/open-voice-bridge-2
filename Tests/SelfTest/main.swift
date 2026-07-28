@@ -2093,8 +2093,23 @@ final class FailingShortcutEventSink: ShortcutEventSink {
     }
 }
 
+final class RecordingShortcutPulseScheduler: ShortcutPulseScheduling {
+    var scheduled: [(delay: TimeInterval, action: () -> Void)] = []
+
+    func schedule(
+        after delay: TimeInterval,
+        _ action: @escaping () -> Void
+    ) {
+        scheduled.append((delay, action))
+    }
+}
+
 let modifierSink = RecordingShortcutEventSink()
-let modifierEmitter = ShortcutEmitter(sink: modifierSink)
+let modifierScheduler = RecordingShortcutPulseScheduler()
+let modifierEmitter = ShortcutEmitter(
+    sink: modifierSink,
+    scheduler: modifierScheduler
+)
 _ = modifierEmitter.handle(
     .down,
     button: .microphone,
@@ -2105,8 +2120,10 @@ _ = modifierEmitter.handle(
     button: .microphone,
     binding: .chord(modifierOnlyChord!)
 )
+modifierScheduler.scheduled.first?.action()
 check(
-    modifierSink.events == [
+    modifierScheduler.scheduled.first?.delay == 0.12 &&
+        modifierSink.events == [
         .modifier(.control, isDown: true, activeModifiers: [.control]),
         .modifier(.option, isDown: true, activeModifiers: [.control, .option]),
         .modifier(.option, isDown: false, activeModifiers: [.control]),
