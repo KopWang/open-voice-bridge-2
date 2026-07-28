@@ -25,7 +25,7 @@
       "kind": "bluetooth-hid",
       "role": "button-input",
       "status": "implemented",
-      "notes": "The macOS app opens the RC003 HID manager with exclusive access when available, reads report 1, and does not open the device microphone or a BLE GATT connection."
+      "notes": "The macOS app opens one stable monitored RC003 HID manager, suppresses matching native events at the HID event-tap layer, reads report 1, and does not open the device microphone or a BLE GATT connection."
     }
   ],
   "capabilities": [
