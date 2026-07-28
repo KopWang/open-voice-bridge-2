@@ -1,5 +1,23 @@
 import Foundation
 
+protocol ShortcutPulseScheduling {
+    func schedule(
+        after delay: TimeInterval,
+        _ action: @escaping () -> Void
+    )
+}
+
+struct DispatchShortcutPulseScheduler: ShortcutPulseScheduling {
+    func schedule(
+        after delay: TimeInterval,
+        _ action: @escaping () -> Void
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            action()
+        }
+    }
+}
+
 enum ShortcutEvent: Equatable {
     case modifier(
         KeyModifier,
@@ -20,11 +38,23 @@ protocol ShortcutEventSink: AnyObject {
 
 final class ShortcutEmitter {
     private let sink: ShortcutEventSink
+    private let scheduler: ShortcutPulseScheduling
+    private let modifierPulseDuration: TimeInterval
     private var activeButtons = Set<RemoteButton>()
     private var heldChords: [RemoteButton: KeyChord] = [:]
+    private var modifierOwners: [KeyModifier: Set<RemoteButton>] = [:]
+    private var keyOwners: [ShortcutKey: Set<RemoteButton>] = [:]
+    private var pulseTokens: [RemoteButton: UInt64] = [:]
+    private var nextPulseToken: UInt64 = 0
 
-    init(sink: ShortcutEventSink) {
+    init(
+        sink: ShortcutEventSink,
+        scheduler: ShortcutPulseScheduling = DispatchShortcutPulseScheduler(),
+        modifierPulseDuration: TimeInterval = 0.12
+    ) {
         self.sink = sink
+        self.scheduler = scheduler
+        self.modifierPulseDuration = modifierPulseDuration
     }
 
     @discardableResult
@@ -46,88 +76,110 @@ final class ShortcutEmitter {
                 }
                 return true
             case let .chord(chord):
-                guard press(chord) else {
+                guard press(chord, owner: button) else {
                     activeButtons.remove(button)
                     return false
                 }
                 heldChords[button] = chord
+                if chord.isModifierShortcutPulse {
+                    schedulePulseRelease(for: button)
+                }
                 return true
             }
 
         case .up:
+            if pulseTokens[button] != nil {
+                return true
+            }
             guard activeButtons.remove(button) != nil else { return true }
             guard let chord = heldChords.removeValue(forKey: button) else { return true }
-            return release(chord)
+            return release(chord, owner: button)
         }
     }
 
     @discardableResult
     func replaceBinding(for button: RemoteButton) -> Bool {
+        pulseTokens.removeValue(forKey: button)
         activeButtons.remove(button)
         guard let chord = heldChords.removeValue(forKey: button) else { return true }
-        return release(chord)
+        return release(chord, owner: button)
     }
 
     @discardableResult
     func forceReleaseAll(reason: String) -> Bool {
         _ = reason
+        pulseTokens.removeAll()
         var succeeded = true
         for button in RemoteButton.allCases {
             guard let chord = heldChords.removeValue(forKey: button) else { continue }
-            if !release(chord) { succeeded = false }
+            if !release(chord, owner: button) { succeeded = false }
         }
         activeButtons.removeAll()
         return succeeded
     }
 
-    private func press(_ chord: KeyChord) -> Bool {
-        var activeModifiers = Set<KeyModifier>()
-        var pressedModifiers: [KeyModifier] = []
-
+    private func press(_ chord: KeyChord, owner: RemoteButton) -> Bool {
+        var addedModifiers: [KeyModifier] = []
         for modifier in chord.modifiers.sorted() {
-            activeModifiers.insert(modifier)
-            guard sink.post(.modifier(
-                modifier,
-                isDown: true,
-                activeModifiers: activeModifiers
-            )) else {
-                activeModifiers.remove(modifier)
-                rollback(pressedModifiers, activeModifiers: activeModifiers)
+            var owners = modifierOwners[modifier] ?? []
+            let wasHeld = !owners.isEmpty
+            owners.insert(owner)
+            modifierOwners[modifier] = owners
+            addedModifiers.append(modifier)
+
+            if !wasHeld,
+               !sink.post(.modifier(
+                   modifier,
+                   isDown: true,
+                   activeModifiers: activeModifiers
+               ))
+            {
+                removeModifierOwner(
+                    modifier,
+                    owner: owner,
+                    emitRelease: false
+                )
+                addedModifiers.removeLast()
+                rollback(addedModifiers, owner: owner)
                 return false
             }
-            pressedModifiers.append(modifier)
         }
 
         if let key = chord.key {
-            guard sink.post(.key(
-                key,
-                isDown: true,
-                activeModifiers: activeModifiers
-            )) else {
-                rollback(pressedModifiers, activeModifiers: activeModifiers)
+            var owners = keyOwners[key] ?? []
+            let wasHeld = !owners.isEmpty
+            owners.insert(owner)
+            keyOwners[key] = owners
+            if !wasHeld,
+               !sink.post(.key(
+                   key,
+                   isDown: true,
+                   activeModifiers: activeModifiers
+               ))
+            {
+                removeKeyOwner(key, owner: owner, emitRelease: false)
+                rollback(addedModifiers, owner: owner)
                 return false
             }
         }
         return true
     }
 
-    private func release(_ chord: KeyChord) -> Bool {
+    private func release(_ chord: KeyChord, owner: RemoteButton) -> Bool {
         var succeeded = true
-        var activeModifiers = chord.modifiers
 
-        if let key = chord.key,
-           !sink.post(.key(key, isDown: false, activeModifiers: activeModifiers))
-        {
-            succeeded = false
+        if let key = chord.key {
+            if !removeKeyOwner(key, owner: owner, emitRelease: true) {
+                succeeded = false
+            }
         }
 
         for modifier in chord.modifiers.sorted().reversed() {
-            activeModifiers.remove(modifier)
-            if !sink.post(.modifier(
+            if !removeModifierOwner(
                 modifier,
-                isDown: false,
-                activeModifiers: activeModifiers
-            )) {
+                owner: owner,
+                emitRelease: true
+            ) {
                 succeeded = false
             }
         }
@@ -135,17 +187,88 @@ final class ShortcutEmitter {
     }
 
     private func rollback(
-        _ pressedModifiers: [KeyModifier],
-        activeModifiers: Set<KeyModifier>
+        _ modifiers: [KeyModifier],
+        owner: RemoteButton
     ) {
-        var remaining = activeModifiers
-        for modifier in pressedModifiers.reversed() {
-            remaining.remove(modifier)
-            _ = sink.post(.modifier(
+        for modifier in modifiers.reversed() {
+            _ = removeModifierOwner(
                 modifier,
-                isDown: false,
-                activeModifiers: remaining
-            ))
+                owner: owner,
+                emitRelease: true
+            )
         }
+    }
+
+    private var activeModifiers: Set<KeyModifier> {
+        Set(modifierOwners.compactMap { modifier, owners in
+            owners.isEmpty ? nil : modifier
+        })
+    }
+
+    @discardableResult
+    private func removeModifierOwner(
+        _ modifier: KeyModifier,
+        owner: RemoteButton,
+        emitRelease: Bool
+    ) -> Bool {
+        guard var owners = modifierOwners[modifier] else { return true }
+        owners.remove(owner)
+        guard owners.isEmpty else {
+            modifierOwners[modifier] = owners
+            return true
+        }
+
+        modifierOwners.removeValue(forKey: modifier)
+        guard emitRelease else { return true }
+        return sink.post(.modifier(
+            modifier,
+            isDown: false,
+            activeModifiers: activeModifiers
+        ))
+    }
+
+    @discardableResult
+    private func removeKeyOwner(
+        _ key: ShortcutKey,
+        owner: RemoteButton,
+        emitRelease: Bool
+    ) -> Bool {
+        guard var owners = keyOwners[key] else { return true }
+        owners.remove(owner)
+        guard owners.isEmpty else {
+            keyOwners[key] = owners
+            return true
+        }
+
+        keyOwners.removeValue(forKey: key)
+        guard emitRelease else { return true }
+        return sink.post(.key(
+            key,
+            isDown: false,
+            activeModifiers: activeModifiers
+        ))
+    }
+
+    private func schedulePulseRelease(for button: RemoteButton) {
+        nextPulseToken &+= 1
+        let token = nextPulseToken
+        pulseTokens[button] = token
+        scheduler.schedule(after: modifierPulseDuration) { [weak self] in
+            self?.finishPulse(for: button, token: token)
+        }
+    }
+
+    private func finishPulse(for button: RemoteButton, token: UInt64) {
+        guard pulseTokens[button] == token else { return }
+        pulseTokens.removeValue(forKey: button)
+        activeButtons.remove(button)
+        guard let chord = heldChords.removeValue(forKey: button) else { return }
+        _ = release(chord, owner: button)
+    }
+}
+
+private extension KeyChord {
+    var isModifierShortcutPulse: Bool {
+        key == nil && modifiers.count >= 2
     }
 }
