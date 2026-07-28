@@ -50,7 +50,7 @@ final class ShortcutEmitter {
     init(
         sink: ShortcutEventSink,
         scheduler: ShortcutPulseScheduling = DispatchShortcutPulseScheduler(),
-        modifierPulseDuration: TimeInterval = 0.12
+        modifierPulseDuration: TimeInterval = 0.25
     ) {
         self.sink = sink
         self.scheduler = scheduler

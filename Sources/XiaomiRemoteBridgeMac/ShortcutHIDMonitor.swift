@@ -288,10 +288,12 @@ final class ShortcutHIDMonitor {
             )
         )
         for transition in transitions {
-            eventSuppressor.arm(
-                button: transition.button,
-                edge: transition.edge
-            )
+            if router.shouldSuppressNativeEvent(for: transition.button) {
+                eventSuppressor.arm(
+                    button: transition.button,
+                    edge: transition.edge
+                )
+            }
             AppLogger.shared.write(
                 "HID BUTTON edge=\(transition.edge) button=\(transition.button.rawValue)"
             )

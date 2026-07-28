@@ -24,7 +24,7 @@ struct ProductIdentityTests {
         #expect(plist["CFBundleName"] as? String == "RemoteShortcutBridge")
         #expect(plist["CFBundleIdentifier"] as? String == "com.kopwang.RemoteShortcutBridge")
         #expect(plist["CFBundleShortVersionString"] as? String == "0.1.4")
-        #expect(plist["CFBundleVersion"] as? String == "5")
+        #expect(plist["CFBundleVersion"] as? String == "6")
     }
 
     @Test func declaresNoAudioOrApplicationBluetoothPrivacyUsage() throws {

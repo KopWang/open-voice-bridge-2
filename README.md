@@ -31,7 +31,7 @@ RC003 语音键
 测试版文件名：
 
 ```text
-遥控快捷桥-0.1.4-test.5-macos.dmg
+遥控快捷桥-0.1.4-test.6-macos.dmg
 ```
 
 1. 打开 DMG，把 `遥控快捷桥.app` 拖入 `Applications`。

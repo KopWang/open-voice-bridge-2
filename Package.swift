@@ -78,6 +78,7 @@ let package = Package(
             ],
             sources: [
                 "AppLoggerTests.swift",
+                "CGShortcutEventSinkTests.swift",
                 "ControllerOnlyWiringTests.swift",
                 "ControllerRemoteButtonsTests.swift",
                 "LaunchAtLoginManagerTests.swift",

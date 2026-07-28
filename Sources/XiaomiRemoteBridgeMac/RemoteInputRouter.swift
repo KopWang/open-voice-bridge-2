@@ -97,6 +97,15 @@ final class RemoteInputRouter {
         return emitter.forceReleaseAll(reason: reason)
     }
 
+    func shouldSuppressNativeEvent(for button: RemoteButton) -> Bool {
+        if !settings.binding(for: button).isDisabled {
+            return true
+        }
+        return settings.combinationBindings.contains { chord, binding in
+            !binding.isDisabled && chord.buttons.contains(button)
+        }
+    }
+
     private func pressSingleOrDefer(_ button: RemoteButton) -> Bool {
         guard !consumedButtons.contains(button) else { return true }
         if pendingModifierReleases.removeValue(forKey: button) != nil {
@@ -296,6 +305,11 @@ final class RemoteInputRouter {
 }
 
 private extension ShortcutBinding {
+    var isDisabled: Bool {
+        if case .disabled = self { return true }
+        return false
+    }
+
     var isSingleModifier: Bool {
         guard case let .chord(chord) = self else { return false }
         return chord.key == nil && chord.modifiers.count == 1

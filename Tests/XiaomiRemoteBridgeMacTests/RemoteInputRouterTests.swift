@@ -156,6 +156,35 @@ struct RemoteInputRouterTests {
         ])
     }
 
+    @Test func disabledSingleDoesNotTakeNativeEventOwnership() throws {
+        let fixture = try makeFixture()
+        fixture.settings.setBinding(.disabled, for: .tv)
+
+        #expect(!fixture.router.shouldSuppressNativeEvent(for: .tv))
+    }
+
+    @Test func mappedSingleTakesNativeEventOwnership() throws {
+        let fixture = try makeFixture()
+        let up = ShortcutKey(keyCode: 126, displayName: "Up Arrow")
+        let binding = try #require(
+            KeyChord(modifiers: [], key: up)
+        )
+        fixture.settings.setBinding(.chord(binding), for: .tv)
+
+        #expect(fixture.router.shouldSuppressNativeEvent(for: .tv))
+    }
+
+    @Test func activeCombinationTakesOwnershipOfDisabledMember() throws {
+        let fixture = try makeFixture()
+        fixture.settings.setBinding(.disabled, for: .tv)
+        let input = try #require(
+            RemoteButtonChord(buttons: [.tv, .up])
+        )
+        fixture.settings.setCombinationBinding(.system(.showDesktop), for: input)
+
+        #expect(fixture.router.shouldSuppressNativeEvent(for: .tv))
+    }
+
     private func makeFixture() throws -> (
         router: RemoteInputRouter,
         settings: ShortcutBridgeSettings,

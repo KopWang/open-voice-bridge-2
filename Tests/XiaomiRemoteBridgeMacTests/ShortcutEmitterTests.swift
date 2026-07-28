@@ -131,7 +131,7 @@ struct ShortcutEmitterTests {
         ])
     }
 
-    @Test func modifierOnlyShortcutUsesA120MillisecondPulse() {
+    @Test func modifierOnlyShortcutUsesA250MillisecondPulse() {
         let sink = Sink()
         let scheduler = Scheduler()
         let emitter = ShortcutEmitter(sink: sink, scheduler: scheduler)
@@ -148,7 +148,7 @@ struct ShortcutEmitterTests {
         )
 
         #expect(scheduler.scheduled.count == 1)
-        #expect(scheduler.scheduled[0].delay == 0.12)
+        #expect(scheduler.scheduled[0].delay == 0.25)
         #expect(sink.events.count == 2)
         scheduler.scheduled[0].action()
         #expect(sink.events == [

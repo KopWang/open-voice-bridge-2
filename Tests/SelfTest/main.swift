@@ -2122,7 +2122,7 @@ _ = modifierEmitter.handle(
 )
 modifierScheduler.scheduled.first?.action()
 check(
-    modifierScheduler.scheduled.first?.delay == 0.12 &&
+    modifierScheduler.scheduled.first?.delay == 0.25 &&
         modifierSink.events == [
         .modifier(.control, isDown: true, activeModifiers: [.control]),
         .modifier(.option, isDown: true, activeModifiers: [.control, .option]),
