@@ -10,10 +10,14 @@ final class RemoteInputRouter {
     private let emitter: ShortcutEmitter
     private let scheduler: ShortcutPulseScheduling
     private let combinationWindow: TimeInterval
+    private let modifierReleaseGrace: TimeInterval
 
     private var physicalPressed = Set<RemoteButton>()
     private var pendingSingles: [RemoteButton: UInt64] = [:]
+    private var pendingModifierReleases: [RemoteButton: UInt64] = [:]
     private var emittedSingles = Set<RemoteButton>()
+    private var latchedModifiers = Set<RemoteButton>()
+    private var modifiersUsedWithAnotherKey = Set<RemoteButton>()
     private var consumedButtons = Set<RemoteButton>()
     private var activeCombination: ActiveCombination?
     private var nextToken: UInt64 = 0
@@ -22,12 +26,14 @@ final class RemoteInputRouter {
         settings: ShortcutBridgeSettings,
         emitter: ShortcutEmitter,
         scheduler: ShortcutPulseScheduling = DispatchShortcutPulseScheduler(),
-        combinationWindow: TimeInterval = 0.14
+        combinationWindow: TimeInterval = 0.14,
+        modifierReleaseGrace: TimeInterval = 0.5
     ) {
         self.settings = settings
         self.emitter = emitter
         self.scheduler = scheduler
         self.combinationWindow = combinationWindow
+        self.modifierReleaseGrace = modifierReleaseGrace
     }
 
     @discardableResult
@@ -56,6 +62,10 @@ final class RemoteInputRouter {
                 succeeded = false
             }
         }
+        if !added.isEmpty {
+            adoptPendingModifiers()
+            markPhysicalModifiersUsed(with: added)
+        }
         for button in ordered(added) {
             if !pressSingleOrDefer(button) {
                 succeeded = false
@@ -68,6 +78,9 @@ final class RemoteInputRouter {
         if consumedButtons.isDisjoint(with: physicalPressed) {
             consumedButtons.removeAll()
         }
+        if physicalPressed.isEmpty, !releaseLatchedModifiers() {
+            succeeded = false
+        }
         return succeeded
     }
 
@@ -75,7 +88,10 @@ final class RemoteInputRouter {
     func forceReleaseAll(reason: String) -> Bool {
         physicalPressed.removeAll()
         pendingSingles.removeAll()
+        pendingModifierReleases.removeAll()
         emittedSingles.removeAll()
+        latchedModifiers.removeAll()
+        modifiersUsedWithAnotherKey.removeAll()
         consumedButtons.removeAll()
         activeCombination = nil
         return emitter.forceReleaseAll(reason: reason)
@@ -83,6 +99,10 @@ final class RemoteInputRouter {
 
     private func pressSingleOrDefer(_ button: RemoteButton) -> Bool {
         guard !consumedButtons.contains(button) else { return true }
+        if pendingModifierReleases.removeValue(forKey: button) != nil {
+            latchedModifiers.remove(button)
+            return true
+        }
         if participatesInCombination(button) {
             nextToken &+= 1
             let token = nextToken
@@ -119,12 +139,16 @@ final class RemoteInputRouter {
             return emitter.handle(.up, button: button, binding: binding)
         }
 
-        guard emittedSingles.remove(button) != nil else { return true }
-        return emitter.handle(
-            .up,
-            button: button,
-            binding: settings.binding(for: button)
-        )
+        guard emittedSingles.contains(button) else { return true }
+        let binding = settings.binding(for: button)
+        if
+            binding.isSingleModifier,
+            modifiersUsedWithAnotherKey.remove(button) == nil
+        {
+            scheduleModifierRelease(button)
+            return true
+        }
+        return releaseEmittedSingle(button, binding: binding)
     }
 
     private func settleSingle(_ button: RemoteButton, token: UInt64) {
@@ -144,6 +168,78 @@ final class RemoteInputRouter {
         ) {
             emittedSingles.insert(button)
         }
+    }
+
+    private func scheduleModifierRelease(_ button: RemoteButton) {
+        nextToken &+= 1
+        let token = nextToken
+        pendingModifierReleases[button] = token
+        scheduler.schedule(after: modifierReleaseGrace) { [weak self] in
+            self?.finishModifierRelease(button, token: token)
+        }
+    }
+
+    private func finishModifierRelease(
+        _ button: RemoteButton,
+        token: UInt64
+    ) {
+        guard
+            pendingModifierReleases[button] == token,
+            !physicalPressed.contains(button),
+            !latchedModifiers.contains(button)
+        else {
+            return
+        }
+        pendingModifierReleases.removeValue(forKey: button)
+        _ = releaseEmittedSingle(
+            button,
+            binding: settings.binding(for: button)
+        )
+    }
+
+    private func adoptPendingModifiers() {
+        for button in Array(pendingModifierReleases.keys) {
+            pendingModifierReleases.removeValue(forKey: button)
+            latchedModifiers.insert(button)
+        }
+    }
+
+    private func markPhysicalModifiersUsed(
+        with added: Set<RemoteButton>
+    ) {
+        guard !added.isEmpty else { return }
+        for button in physicalPressed.subtracting(added) {
+            if
+                emittedSingles.contains(button),
+                settings.binding(for: button).isSingleModifier
+            {
+                modifiersUsedWithAnotherKey.insert(button)
+            }
+        }
+    }
+
+    private func releaseLatchedModifiers() -> Bool {
+        var succeeded = true
+        for button in ordered(latchedModifiers) {
+            if !releaseEmittedSingle(
+                button,
+                binding: settings.binding(for: button)
+            ) {
+                succeeded = false
+            }
+        }
+        latchedModifiers.removeAll()
+        return succeeded
+    }
+
+    private func releaseEmittedSingle(
+        _ button: RemoteButton,
+        binding: ShortcutBinding
+    ) -> Bool {
+        pendingModifierReleases.removeValue(forKey: button)
+        modifiersUsedWithAnotherKey.remove(button)
+        guard emittedSingles.remove(button) != nil else { return true }
+        return emitter.handle(.up, button: button, binding: binding)
     }
 
     private func startMatchingCombination() -> Bool {
@@ -195,5 +291,12 @@ final class RemoteInputRouter {
         _ buttons: Set<RemoteButton>
     ) -> [RemoteButton] {
         RemoteButton.allCases.filter(buttons.contains)
+    }
+}
+
+private extension ShortcutBinding {
+    var isSingleModifier: Bool {
+        guard case let .chord(chord) = self else { return false }
+        return chord.key == nil && chord.modifiers.count == 1
     }
 }

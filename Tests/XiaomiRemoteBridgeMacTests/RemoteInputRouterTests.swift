@@ -77,6 +77,7 @@ struct RemoteInputRouterTests {
         _ = fixture.router.update(pressed: [.menu])
         fixture.scheduler.scheduled[0].action()
         _ = fixture.router.update(pressed: [])
+        fixture.scheduler.scheduled[1].action()
 
         #expect(fixture.sink.events == [
             .modifier(.control, isDown: true, activeModifiers: [.control]),
@@ -98,6 +99,39 @@ struct RemoteInputRouterTests {
         #expect(
             fixture.sink.events.contains(.system(.showDesktop)) == false
         )
+    }
+
+    @Test func serializedModifierThenKeyStillOverlapsAtTheOutput() throws {
+        let fixture = try makeFixture()
+
+        _ = fixture.router.update(pressed: [.menu])
+        _ = fixture.router.update(pressed: [])
+        _ = fixture.router.update(pressed: [.up])
+        _ = fixture.router.update(pressed: [])
+
+        let up = ShortcutKey(keyCode: 126, displayName: "Up Arrow")
+        #expect(fixture.scheduler.scheduled.count == 1)
+        #expect(fixture.scheduler.scheduled[0].delay == 0.5)
+        #expect(fixture.sink.events == [
+            .modifier(.control, isDown: true, activeModifiers: [.control]),
+            .key(up, isDown: true, activeModifiers: [.control]),
+            .key(up, isDown: false, activeModifiers: [.control]),
+            .modifier(.control, isDown: false, activeModifiers: []),
+        ])
+    }
+
+    @Test func releasedModifierEndsWhenNoFollowerArrives() throws {
+        let fixture = try makeFixture()
+
+        _ = fixture.router.update(pressed: [.menu])
+        _ = fixture.router.update(pressed: [])
+        #expect(fixture.sink.events.count == 1)
+        fixture.scheduler.scheduled[0].action()
+
+        #expect(fixture.sink.events == [
+            .modifier(.control, isDown: true, activeModifiers: [.control]),
+            .modifier(.control, isDown: false, activeModifiers: []),
+        ])
     }
 
     private func makeFixture() throws -> (
