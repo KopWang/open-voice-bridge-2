@@ -10,6 +10,10 @@ enum HIDManagerOpenPolicy {
     static let mode = HIDManagerOpenMode.monitored
 }
 
+enum HIDDeviceOpenPolicy {
+    static let options = IOOptionBits(kIOHIDOptionsTypeNone)
+}
+
 private func shortcutHIDDeviceMatched(
     context: UnsafeMutableRawPointer?,
     result: IOReturn,
@@ -186,7 +190,10 @@ final class ShortcutHIDMonitor {
         edgeTracker.reset()
         eventSuppressor.stop()
 
-        activeDevice = nil
+        if let activeDevice {
+            IOHIDDeviceClose(activeDevice, HIDDeviceOpenPolicy.options)
+            self.activeDevice = nil
+        }
         isExclusivelyReading = false
 
         if let manager {
@@ -208,15 +215,20 @@ final class ShortcutHIDMonitor {
     fileprivate func deviceDidMatch(result: IOReturn, device: IOHIDDevice) {
         guard manager != nil, !lifecycle.devicePresent else { return }
 
-        let openSucceeded = result == kIOReturnSuccess
+        let openResult = result == kIOReturnSuccess
+            ? IOHIDDeviceOpen(device, HIDDeviceOpenPolicy.options)
+            : result
+        let openSucceeded = openResult == kIOReturnSuccess
         switch lifecycle.matched(openSucceeded: openSucceeded) {
         case .ignored:
             return
         case .unreadable:
-            updateStatus("无法读取 RC003（错误 \(result)）")
-            AppLogger.shared.write("HID DEVICE OPEN FAILED result=\(result)")
+            updateStatus("无法读取 RC003（错误 \(openResult)）")
+            AppLogger.shared.write(
+                "HID DEVICE OPEN FAILED result=\(openResult)"
+            )
             DispatchQueue.main.async { [weak self] in
-                self?.failReaderClosed(result: result)
+                self?.failReaderClosed(result: openResult)
             }
         case .present:
             activeDevice = device
@@ -228,7 +240,9 @@ final class ShortcutHIDMonitor {
                 ? "键盘模式"
                 : "键盘模式；系统原按键可能保留"
             updateStatus("RC003 已连接（\(detail)）")
-            AppLogger.shared.write("HID CONNECTED mode=monitored")
+            AppLogger.shared.write(
+                "HID CONNECTED mode=monitored device_open=\(openResult)"
+            )
         }
     }
 
@@ -237,6 +251,7 @@ final class ShortcutHIDMonitor {
         _ = lifecycle.removed()
         _ = router.forceReleaseAll(reason: "device_removed")
         edgeTracker.reset()
+        IOHIDDeviceClose(activeDevice, HIDDeviceOpenPolicy.options)
         self.activeDevice = nil
         isExclusivelyReading = false
         setConnected(false)

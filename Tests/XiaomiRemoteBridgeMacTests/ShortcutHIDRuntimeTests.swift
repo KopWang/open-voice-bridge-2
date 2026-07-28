@@ -40,6 +40,7 @@ struct ShortcutHIDRuntimeTests {
     @Test func opensTheManagerOnceInStableMonitoredMode() {
         #expect(HIDManagerOpenPolicy.options == IOOptionBits(kIOHIDOptionsTypeNone))
         #expect(HIDManagerOpenPolicy.mode == .monitored)
+        #expect(HIDDeviceOpenPolicy.options == IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
     @Test func suppressesNativeRemoteEventsAtTheHIDLayer() {
