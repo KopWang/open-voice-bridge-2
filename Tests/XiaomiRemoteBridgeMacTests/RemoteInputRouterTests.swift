@@ -58,7 +58,7 @@ struct RemoteInputRouterTests {
         _ = fixture.router.update(pressed: [])
 
         #expect(fixture.scheduler.scheduled.count == 2)
-        #expect(fixture.scheduler.scheduled.allSatisfy { $0.delay == 0.14 })
+        #expect(fixture.scheduler.scheduled.allSatisfy { $0.delay == 0.5 })
         #expect(fixture.sink.events == [
             .modifier(.command, isDown: true, activeModifiers: [.command]),
             .key(outputKey, isDown: true, activeModifiers: [.command]),
@@ -85,7 +85,7 @@ struct RemoteInputRouterTests {
         ])
     }
 
-    @Test func serializedReportsDoNotInventSimultaneousInput() throws {
+    @Test func serializedReportsResolveAnExplicitCombination() throws {
         let fixture = try makeFixture()
         let input = try #require(
             RemoteButtonChord(buttons: [.menu, .up])
@@ -96,9 +96,31 @@ struct RemoteInputRouterTests {
         _ = fixture.router.update(pressed: [.up])
         _ = fixture.router.update(pressed: [])
 
-        #expect(
-            fixture.sink.events.contains(.system(.showDesktop)) == false
+        #expect(fixture.sink.events == [.system(.showDesktop)])
+    }
+
+    @Test func serializedButtonsOutsideTheWindowRemainSingles() throws {
+        let fixture = try makeFixture()
+        let input = try #require(
+            RemoteButtonChord(buttons: [.ok, .up])
         )
+        fixture.settings.setCombinationBinding(.system(.showDesktop), for: input)
+
+        _ = fixture.router.update(pressed: [.ok])
+        _ = fixture.router.update(pressed: [])
+        fixture.scheduler.scheduled[0].action()
+        _ = fixture.router.update(pressed: [.up])
+        _ = fixture.router.update(pressed: [])
+        fixture.scheduler.scheduled[1].action()
+
+        let enter = ShortcutKey(keyCode: 36, displayName: "Return")
+        let up = ShortcutKey(keyCode: 126, displayName: "Up Arrow")
+        #expect(fixture.sink.events == [
+            .key(enter, isDown: true, activeModifiers: []),
+            .key(enter, isDown: false, activeModifiers: []),
+            .key(up, isDown: true, activeModifiers: []),
+            .key(up, isDown: false, activeModifiers: []),
+        ])
     }
 
     @Test func serializedModifierThenKeyStillOverlapsAtTheOutput() throws {

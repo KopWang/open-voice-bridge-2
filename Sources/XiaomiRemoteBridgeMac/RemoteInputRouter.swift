@@ -26,7 +26,7 @@ final class RemoteInputRouter {
         settings: ShortcutBridgeSettings,
         emitter: ShortcutEmitter,
         scheduler: ShortcutPulseScheduling = DispatchShortcutPulseScheduler(),
-        combinationWindow: TimeInterval = 0.14,
+        combinationWindow: TimeInterval = 0.5,
         modifierReleaseGrace: TimeInterval = 0.5
     ) {
         self.settings = settings
@@ -131,12 +131,8 @@ final class RemoteInputRouter {
             return true
         }
 
-        if pendingSingles.removeValue(forKey: button) != nil {
-            let binding = settings.binding(for: button)
-            guard emitter.handle(.down, button: button, binding: binding) else {
-                return false
-            }
-            return emitter.handle(.up, button: button, binding: binding)
+        if pendingSingles[button] != nil {
+            return true
         }
 
         guard emittedSingles.contains(button) else { return true }
@@ -154,19 +150,23 @@ final class RemoteInputRouter {
     private func settleSingle(_ button: RemoteButton, token: UInt64) {
         guard
             pendingSingles[button] == token,
-            physicalPressed.contains(button),
             !consumedButtons.contains(button),
             activeCombination == nil
         else {
             return
         }
         pendingSingles.removeValue(forKey: button)
+        let binding = settings.binding(for: button)
         if emitter.handle(
             .down,
             button: button,
-            binding: settings.binding(for: button)
+            binding: binding
         ) {
-            emittedSingles.insert(button)
+            if physicalPressed.contains(button) {
+                emittedSingles.insert(button)
+            } else {
+                _ = emitter.handle(.up, button: button, binding: binding)
+            }
         }
     }
 
@@ -243,9 +243,10 @@ final class RemoteInputRouter {
     }
 
     private func startMatchingCombination() -> Bool {
+        let eligibleButtons = physicalPressed.union(pendingSingles.keys)
         let candidates = settings.combinationBindings.keys
             .filter { chord in
-                chord.buttons.isSubset(of: physicalPressed) &&
+                chord.buttons.isSubset(of: eligibleButtons) &&
                     chord.buttons.allSatisfy {
                         pendingSingles[$0] != nil
                     }
