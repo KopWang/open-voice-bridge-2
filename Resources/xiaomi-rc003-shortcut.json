@@ -25,7 +25,7 @@
       "kind": "bluetooth-hid",
       "role": "button-input",
       "status": "implemented",
-      "notes": "The installed app reads RC003 report 1 through IOHID and does not open the device microphone or a BLE GATT connection."
+      "notes": "The macOS app opens the RC003 HID manager with exclusive access when available, reads report 1, and does not open the device microphone or a BLE GATT connection."
     }
   ],
   "capabilities": [

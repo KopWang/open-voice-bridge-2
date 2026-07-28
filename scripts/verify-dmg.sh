@@ -12,7 +12,7 @@ BUILD="$(
   plutil -extract CFBundleVersion raw -o - \
     "$ROOT/Resources/Info.plist"
 )"
-RELEASE_TAG="$VERSION-test.1"
+RELEASE_TAG="$VERSION-test.$BUILD"
 DMG="${1:-$OUTPUT_DIR/$DISPLAY_NAME-$RELEASE_TAG-macos.dmg}"
 CHECKSUM="$DMG.sha256"
 SOURCE_ROOT="remote-shortcut-bridge-$RELEASE_TAG-source"

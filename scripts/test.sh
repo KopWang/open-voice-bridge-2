@@ -11,8 +11,8 @@ test "$(plutil -extract CFBundleDisplayName raw -o - "$INFO_PLIST")" = "遥控�
 test "$(plutil -extract CFBundleName raw -o - "$INFO_PLIST")" = "RemoteShortcutBridge"
 test "$(plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")" = \
   "com.kopwang.RemoteShortcutBridge"
-test "$(plutil -extract CFBundleShortVersionString raw -o - "$INFO_PLIST")" = "0.1.0"
-test "$(plutil -extract CFBundleVersion raw -o - "$INFO_PLIST")" = "1"
+test "$(plutil -extract CFBundleShortVersionString raw -o - "$INFO_PLIST")" = "0.1.1"
+test "$(plutil -extract CFBundleVersion raw -o - "$INFO_PLIST")" = "2"
 if plutil -extract NSMicrophoneUsageDescription raw -o - "$INFO_PLIST" >/dev/null 2>&1; then
   print -u2 "FAIL controller-only app still declares microphone access"
   exit 1
