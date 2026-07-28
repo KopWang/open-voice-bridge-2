@@ -4,6 +4,13 @@ import Testing
 
 @Suite("Shortcut capture event tap")
 struct ShortcutCaptureEventTapTests {
+    @Test func capturesAtTheHIDLayerBeforeMissionControl() {
+        #expect(
+            ShortcutCaptureEventTap.location.rawValue ==
+                CGEventTapLocation.cghidEventTap.rawValue
+        )
+    }
+
     @Test func physicalShortcutEventsAreCapturedAndSuppressed() {
         for type in [
             CGEventType.flagsChanged,

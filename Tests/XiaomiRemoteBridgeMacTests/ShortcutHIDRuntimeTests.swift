@@ -1,3 +1,4 @@
+import CoreGraphics
 import IOKit
 import Testing
 @testable import XiaomiRemoteBridgeMac
@@ -35,30 +36,15 @@ struct ShortcutHIDRuntimeTests {
         #expect(ups.allSatisfy { $0.edge == .up })
     }
 
-    @Test func prefersExclusiveManagerOpen() {
-        #expect(
-            HIDManagerOpenSelection.resolve(
-                seizeResult: kIOReturnSuccess,
-                monitoredResult: kIOReturnError
-            ) == .seized
-        )
+    @Test func opensTheManagerOnceInStableMonitoredMode() {
+        #expect(HIDManagerOpenPolicy.options == IOOptionBits(kIOHIDOptionsTypeNone))
+        #expect(HIDManagerOpenPolicy.mode == .monitored)
     }
 
-    @Test func fallsBackToMonitoredMode() {
+    @Test func suppressesNativeRemoteEventsAtTheHIDLayer() {
         #expect(
-            HIDManagerOpenSelection.resolve(
-                seizeResult: kIOReturnExclusiveAccess,
-                monitoredResult: kIOReturnSuccess
-            ) == .monitored
-        )
-    }
-
-    @Test func reportsTheMonitoredOpenFailure() {
-        #expect(
-            HIDManagerOpenSelection.resolve(
-                seizeResult: kIOReturnExclusiveAccess,
-                monitoredResult: kIOReturnNotPermitted
-            ) == .unavailable(kIOReturnNotPermitted)
+            KeyboardEventSuppressor.location.rawValue ==
+                CGEventTapLocation.cghidEventTap.rawValue
         )
     }
 }

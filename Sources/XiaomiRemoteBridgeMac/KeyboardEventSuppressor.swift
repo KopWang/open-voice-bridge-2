@@ -19,6 +19,7 @@ private func keyboardEventSuppressorCallback(
 
 final class KeyboardEventSuppressor {
     private static let systemDefinedEventTypeRawValue: UInt32 = 14
+    static let location = CGEventTapLocation.cghidEventTap
 
     private struct PendingEvent {
         let event: RemoteNativeEvent
@@ -42,7 +43,7 @@ final class KeyboardEventSuppressor {
             CGEventMask(1 << Self.systemDefinedEventTypeRawValue)
         let context = Unmanaged.passUnretained(self).toOpaque()
         guard let eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
+            tap: Self.location,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: eventMask,

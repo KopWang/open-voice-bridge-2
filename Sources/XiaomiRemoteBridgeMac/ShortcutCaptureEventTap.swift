@@ -42,6 +42,7 @@ private func shortcutCaptureEventTapCallback(
 
 final class ShortcutCaptureEventTap {
     typealias Handler = (CGEventType, CGEvent) -> Void
+    static let location = CGEventTapLocation.cghidEventTap
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -63,7 +64,7 @@ final class ShortcutCaptureEventTap {
             CGEventMask(1 << CGEventType.keyUp.rawValue)
         let context = Unmanaged.passUnretained(self).toOpaque()
         guard let eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
+            tap: Self.location,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: eventMask,

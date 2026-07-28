@@ -2,24 +2,12 @@ import Foundation
 import IOKit.hid
 
 enum HIDManagerOpenMode: Equatable {
-    case seized
     case monitored
-    case unavailable(IOReturn)
 }
 
-enum HIDManagerOpenSelection {
-    static func resolve(
-        seizeResult: IOReturn,
-        monitoredResult: IOReturn
-    ) -> HIDManagerOpenMode {
-        if seizeResult == kIOReturnSuccess {
-            return .seized
-        }
-        if monitoredResult == kIOReturnSuccess {
-            return .monitored
-        }
-        return .unavailable(monitoredResult)
-    }
+enum HIDManagerOpenPolicy {
+    static let options = IOOptionBits(kIOHIDOptionsTypeNone)
+    static let mode = HIDManagerOpenMode.monitored
 }
 
 private func shortcutHIDDeviceMatched(
@@ -83,7 +71,6 @@ final class ShortcutHIDMonitor {
     private let emitter: ShortcutEmitter
     private let eventSuppressor = KeyboardEventSuppressor()
     private var manager: IOHIDManager?
-    private var managerOpenMode: HIDManagerOpenMode?
     private var lifecycle = RemoteDeviceLifecycle()
     private var activeDevice: IOHIDDevice?
     private var activeDeviceIsSeized = false
@@ -166,56 +153,29 @@ final class ShortcutHIDMonitor {
             CFRunLoopMode.commonModes.rawValue
         )
 
-        let seizeResult = IOHIDManagerOpen(
-            manager,
-            IOOptionBits(kIOHIDOptionsTypeSeizeDevice)
-        )
-        let monitoredResult = seizeResult == kIOReturnSuccess
-            ? kIOReturnError
-            : IOHIDManagerOpen(
+        let result = IOHIDManagerOpen(manager, HIDManagerOpenPolicy.options)
+        guard result == kIOReturnSuccess else {
+            IOHIDManagerUnscheduleFromRunLoop(
                 manager,
-                IOOptionBits(kIOHIDOptionsTypeNone)
+                CFRunLoopGetMain(),
+                CFRunLoopMode.commonModes.rawValue
             )
-        let openMode = HIDManagerOpenSelection.resolve(
-            seizeResult: seizeResult,
-            monitoredResult: monitoredResult
-        )
-
-        guard case let .unavailable(result) = openMode else {
-            managerOpenMode = openMode
-            let suppressionReady: Bool
-            if openMode == .monitored {
-                suppressionReady = eventSuppressor.start()
-                AppLogger.shared.write(
-                    "HID EXCLUSIVE unavailable=\(seizeResult) fallback=\(monitoredResult)"
-                )
-            } else {
-                suppressionReady = true
-            }
-            AppLogger.shared.write(
-                "HID FILTER active=\(eventSuppressor.isRunning) ready=\(suppressionReady)"
-            )
-
-            self.manager = manager
-            lifecycle.openPipeline()
-            startPermissionMonitor()
-            updateStatus("等待 RC003 遥控器")
-            AppLogger.shared.write(
-                "HID START mode=controller_only access=\(openMode.logName)"
-            )
+            eventSuppressor.stop()
+            updateStatus("无法读取遥控器（错误 \(result)）")
+            AppLogger.shared.write("HID START FAILED monitor=\(result)")
             return
         }
 
-        IOHIDManagerUnscheduleFromRunLoop(
-            manager,
-            CFRunLoopGetMain(),
-            CFRunLoopMode.commonModes.rawValue
-        )
-        eventSuppressor.stop()
-        updateStatus("无法读取遥控器（错误 \(result)）")
+        let suppressionReady = eventSuppressor.start()
         AppLogger.shared.write(
-            "HID START FAILED seize=\(seizeResult) monitor=\(monitoredResult)"
+            "HID FILTER active=\(eventSuppressor.isRunning) ready=\(suppressionReady)"
         )
+
+        self.manager = manager
+        lifecycle.openPipeline()
+        startPermissionMonitor()
+        updateStatus("等待 RC003 遥控器")
+        AppLogger.shared.write("HID START mode=controller_only access=monitored")
     }
 
     func refresh() {
@@ -245,8 +205,6 @@ final class ShortcutHIDMonitor {
             )
             self.manager = nil
         }
-        managerOpenMode = nil
-
         lifecycle.closePipeline()
         setConnected(false)
     }
@@ -255,8 +213,6 @@ final class ShortcutHIDMonitor {
         guard manager != nil, !lifecycle.devicePresent else { return }
 
         let openSucceeded = result == kIOReturnSuccess
-        let seized = managerOpenMode == .seized
-
         switch lifecycle.matched(openSucceeded: openSucceeded) {
         case .ignored:
             return
@@ -268,21 +224,16 @@ final class ShortcutHIDMonitor {
             }
         case .present:
             activeDevice = device
-            activeDeviceIsSeized = seized
-            isExclusivelyReading = seized
+            activeDeviceIsSeized = false
+            isExclusivelyReading = false
             edgeTracker.reset()
             _ = emitter.forceReleaseAll(reason: "device_generation_changed")
             setConnected(true)
-            if seized {
-                updateStatus("RC003 已连接（独占模式）")
-                AppLogger.shared.write("HID CONNECTED mode=seized")
-            } else {
-                let detail = eventSuppressor.isRunning
-                    ? "兼容模式"
-                    : "兼容模式；系统原按键可能保留"
-                updateStatus("RC003 已连接（\(detail)）")
-                AppLogger.shared.write("HID CONNECTED mode=monitored")
-            }
+            let detail = eventSuppressor.isRunning
+                ? "键盘模式"
+                : "键盘模式；系统原按键可能保留"
+            updateStatus("RC003 已连接（\(detail)）")
+            AppLogger.shared.write("HID CONNECTED mode=monitored")
         }
     }
 
@@ -379,15 +330,5 @@ final class ShortcutHIDMonitor {
         guard value != isConnected else { return }
         isConnected = value
         onConnectionChange?(value)
-    }
-}
-
-private extension HIDManagerOpenMode {
-    var logName: String {
-        switch self {
-        case .seized: return "seized"
-        case .monitored: return "monitored"
-        case .unavailable: return "unavailable"
-        }
     }
 }
