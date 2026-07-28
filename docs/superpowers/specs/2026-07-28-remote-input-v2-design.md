@@ -38,8 +38,7 @@ Physical RC003 evidence confirmed serialized single-usage reports. For a button
 mapped to exactly one modifier, its output release therefore waits up to 500ms.
 If another remote key arrives in that interval, the modifier remains down until
 the follower key is released. This adapts the device transport while preserving
-real overlapping keyboard output; it does not turn arbitrary sequential
-buttons into an explicit input combination.
+real overlapping keyboard output.
 
 ## Explicit remote combinations
 
@@ -48,9 +47,12 @@ Each chord maps to the same output types as a single button.
 
 To distinguish a chord from its member singles:
 
-- a member button with configured combinations waits up to 140 ms;
-- if the configured pressed set forms a chord, its member single actions are
-  suppressed and the chord output is held until every member is released;
+- a member button with configured combinations waits up to 500 ms;
+- because RC003 serializes jointly pressed buttons, pending members in that
+  window can form an explicitly configured chord even when the reports do not
+  overlap;
+- when the chord forms, member single actions are suppressed and the chord
+  output is held until the final reported member is released;
 - otherwise the pending single action begins after the window and remains held
   until physical release;
 - a button mapped to a modifier and not participating in an explicit chord is

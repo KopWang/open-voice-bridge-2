@@ -9,7 +9,7 @@
    the state machine.
 4. Add the combination editor to the native settings UI and retain existing
    single-button controls.
-5. Bump to `0.1.2 (3)`, run all tests, build and verify a universal locally
-   signed DMG, replace the installed app, and verify reports after restart.
+5. Build and verify a universal locally signed DMG, replace the installed app,
+   and verify reports after restart.
 6. Verify physical shortcut capture at the HID layer, preserve user settings,
-   push `main`, and publish `v0.1.2-test.3`.
+   push `main`, and publish a prerelease.
