@@ -245,6 +245,8 @@ struct ShortcutSettingsView: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            modifierMenu(for: button)
+
             Button {
                 if isRecording {
                     capture.cancel()
@@ -271,6 +273,34 @@ struct ShortcutSettingsView: View {
             .disabled(binding == .disabled && !isRecording)
         }
         .frame(minHeight: 30)
+    }
+
+    private func modifierMenu(for button: RemoteButton) -> some View {
+        Menu {
+            modifierButton("Control", modifier: .control, for: button)
+            modifierButton("Option", modifier: .option, for: button)
+            modifierButton("Shift", modifier: .shift, for: button)
+            modifierButton("Command", modifier: .command, for: button)
+        } label: {
+            Image(systemName: "keyboard")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("设为可保持的修饰键")
+    }
+
+    private func modifierButton(
+        _ title: String,
+        modifier: KeyModifier,
+        for button: RemoteButton
+    ) -> some View {
+        Button(title) {
+            capture.cancel()
+            guard let chord = KeyChord(modifiers: [modifier], key: nil) else {
+                return
+            }
+            model.setBinding(.chord(chord), for: button)
+        }
     }
 
     private var permissionsSection: some View {

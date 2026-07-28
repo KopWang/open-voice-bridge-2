@@ -5,8 +5,10 @@ final class ShortcutBridgeSettings: ObservableObject {
     private enum Keys {
         static let bindings = "shortcutBindings"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
+        static let mappingSchemaVersion = "shortcutMappingSchemaVersion"
     }
 
+    private static let currentMappingSchemaVersion = 2
     private let defaults: UserDefaults
 
     @Published private(set) var bindings: [RemoteButton: ShortcutBinding] {
@@ -23,17 +25,34 @@ final class ShortcutBridgeSettings: ObservableObject {
             ? true
             : defaults.bool(forKey: Keys.launchAtLoginEnabled)
 
+        var loadedBindings: [RemoteButton: ShortcutBinding]
+        var savedBindings: [RemoteButton: ShortcutBinding] = [:]
         if
             let data = defaults.data(forKey: Keys.bindings),
             let decoded = try? JSONDecoder().decode([String: ShortcutBinding].self, from: data)
         {
-            let saved = Dictionary(uniqueKeysWithValues: decoded.compactMap { rawButton, binding in
+            savedBindings = Dictionary(uniqueKeysWithValues: decoded.compactMap { rawButton, binding in
                 RemoteButton(rawValue: rawButton).map { ($0, binding) }
             })
-            bindings = Self.defaultBindings.merging(saved) { _, savedValue in savedValue }
+            loadedBindings = Self.defaultBindings.merging(savedBindings) { _, savedValue in savedValue }
         } else {
-            bindings = Self.defaultBindings
+            loadedBindings = Self.defaultBindings
         }
+
+        let schemaVersion = defaults.integer(forKey: Keys.mappingSchemaVersion)
+        if
+            schemaVersion < Self.currentMappingSchemaVersion,
+            savedBindings[.menu] == .system(.contextMenu)
+        {
+            loadedBindings[.menu] = Self.defaultBindings[.menu]
+        }
+        bindings = loadedBindings
+
+        saveBindings()
+        defaults.set(
+            Self.currentMappingSchemaVersion,
+            forKey: Keys.mappingSchemaVersion
+        )
     }
 
     func binding(for button: RemoteButton) -> ShortcutBinding {
@@ -76,7 +95,7 @@ final class ShortcutBridgeSettings: ObservableObject {
         .volumeUp: .system(.volumeUp),
         .home: .system(.showDesktop),
         .volumeDown: .system(.volumeDown),
-        .menu: .system(.contextMenu),
+        .menu: chord([.control]),
         .tv: chord([.command], keyCode: 48, label: "Tab"),
     ]
 }
