@@ -7,7 +7,7 @@ private final class ShortcutCaptureModel: ObservableObject {
     @Published private(set) var preview = ""
 
     private let recorder = ShortcutRecorder()
-    private var eventMonitors: [Any] = []
+    private let eventTap = ShortcutCaptureEventTap()
     private var completion: ((KeyChord) -> Void)?
 
     init() {
@@ -23,7 +23,7 @@ private final class ShortcutCaptureModel: ObservableObject {
     }
 
     deinit {
-        eventMonitors.forEach(NSEvent.removeMonitor)
+        eventTap.stop()
     }
 
     func begin(
@@ -33,12 +33,17 @@ private final class ShortcutCaptureModel: ObservableObject {
         cancel()
         completion = onComplete
         recordingButton = button
-        installEventMonitors()
+        guard eventTap.start(handler: { [weak self] type, event in
+            self?.handle(type: type, event: event)
+        }) else {
+            finish(with: nil)
+            return
+        }
         recorder.start()
     }
 
     func cancel() {
-        guard recordingButton != nil || !eventMonitors.isEmpty else { return }
+        guard recordingButton != nil || eventTap.isRunning else { return }
         recorder.stop()
         finish(with: nil)
     }
@@ -46,8 +51,7 @@ private final class ShortcutCaptureModel: ObservableObject {
     private func finish(with chord: KeyChord?) {
         let callback = completion
         completion = nil
-        eventMonitors.forEach(NSEvent.removeMonitor)
-        eventMonitors.removeAll()
+        eventTap.stop()
         recorder.stop()
         recordingButton = nil
         preview = ""
@@ -56,65 +60,44 @@ private final class ShortcutCaptureModel: ObservableObject {
         }
     }
 
-    private func installEventMonitors() {
-        if let monitor = NSEvent.addLocalMonitorForEvents(
-            matching: .flagsChanged,
-            handler: { [weak self] event in
-            self?.recorder.handleFlagsChanged(
-                Self.modifiers(from: event),
-                isSynthetic: Self.isSynthetic(event)
-            )
-            return event
-        }) {
-            eventMonitors.append(monitor)
-        }
-
-        if let monitor = NSEvent.addLocalMonitorForEvents(
-            matching: .keyDown,
-            handler: { [weak self] event in
-            self?.recorder.handleKeyDown(
+    private func handle(type: CGEventType, event: CGEvent) {
+        let modifiers = Self.modifiers(from: event.flags)
+        switch type {
+        case .flagsChanged:
+            recorder.handleFlagsChanged(modifiers)
+        case .keyDown:
+            recorder.handleKeyDown(
                 Self.shortcutKey(from: event),
-                modifiers: Self.modifiers(from: event),
-                isRepeat: event.isARepeat,
-                isSynthetic: Self.isSynthetic(event)
+                modifiers: modifiers,
+                isRepeat: event.getIntegerValueField(
+                    .keyboardEventAutorepeat
+                ) != 0
             )
-            return Self.isSynthetic(event) ? event : nil
-        }) {
-            eventMonitors.append(monitor)
-        }
-
-        if let monitor = NSEvent.addLocalMonitorForEvents(
-            matching: .keyUp,
-            handler: { [weak self] event in
-            self?.recorder.handleKeyUp(
+        case .keyUp:
+            recorder.handleKeyUp(
                 Self.shortcutKey(from: event),
-                modifiers: Self.modifiers(from: event),
-                isSynthetic: Self.isSynthetic(event)
+                modifiers: modifiers
             )
-            return Self.isSynthetic(event) ? event : nil
-        }) {
-            eventMonitors.append(monitor)
+        default:
+            break
         }
     }
 
-    private static func modifiers(from event: NSEvent) -> Set<KeyModifier> {
+    private static func modifiers(
+        from flags: CGEventFlags
+    ) -> Set<KeyModifier> {
         var result = Set<KeyModifier>()
-        let flags = event.modifierFlags.intersection(
-            .deviceIndependentFlagsMask
-        )
-        if flags.contains(.control) { result.insert(.control) }
-        if flags.contains(.option) { result.insert(.option) }
-        if flags.contains(.shift) { result.insert(.shift) }
-        if flags.contains(.command) { result.insert(.command) }
+        if flags.contains(.maskControl) { result.insert(.control) }
+        if flags.contains(.maskAlternate) { result.insert(.option) }
+        if flags.contains(.maskShift) { result.insert(.shift) }
+        if flags.contains(.maskCommand) { result.insert(.command) }
         return result
     }
 
-    private static func isSynthetic(_ event: NSEvent) -> Bool {
-        event.cgEvent?.getIntegerValueField(.eventSourceUserData) ==
-            KeyboardInjector.syntheticEventMarker
-    }
-
-    private static func shortcutKey(from event: NSEvent) -> ShortcutKey {
+    private static func shortcutKey(from event: CGEvent) -> ShortcutKey {
+        let keyCode = UInt16(
+            event.getIntegerValueField(.keyboardEventKeycode)
+        )
         let labels: [UInt16: String] = [
             36: "Return",
             48: "Tab",
@@ -135,12 +118,13 @@ private final class ShortcutCaptureModel: ObservableObject {
             125: "Down Arrow",
             126: "Up Arrow",
         ]
-        let label = labels[event.keyCode]
-            ?? event.charactersIgnoringModifiers?
+        let label = labels[keyCode]
+            ?? NSEvent(cgEvent: event)?
+                .charactersIgnoringModifiers?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .uppercased()
             ?? ""
-        return ShortcutKey(keyCode: event.keyCode, displayName: label)
+        return ShortcutKey(keyCode: keyCode, displayName: label)
     }
 }
 
