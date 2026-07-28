@@ -1,6 +1,27 @@
 import Foundation
 import IOKit.hid
 
+enum HIDManagerOpenMode: Equatable {
+    case seized
+    case monitored
+    case unavailable(IOReturn)
+}
+
+enum HIDManagerOpenSelection {
+    static func resolve(
+        seizeResult: IOReturn,
+        monitoredResult: IOReturn
+    ) -> HIDManagerOpenMode {
+        if seizeResult == kIOReturnSuccess {
+            return .seized
+        }
+        if monitoredResult == kIOReturnSuccess {
+            return .monitored
+        }
+        return .unavailable(monitoredResult)
+    }
+}
+
 private func shortcutHIDDeviceMatched(
     context: UnsafeMutableRawPointer?,
     result: IOReturn,
@@ -62,6 +83,7 @@ final class ShortcutHIDMonitor {
     private let emitter: ShortcutEmitter
     private let eventSuppressor = KeyboardEventSuppressor()
     private var manager: IOHIDManager?
+    private var managerOpenMode: HIDManagerOpenMode?
     private var lifecycle = RemoteDeviceLifecycle()
     private var activeDevice: IOHIDDevice?
     private var activeDeviceIsSeized = false
@@ -110,9 +132,6 @@ final class ShortcutHIDMonitor {
             return
         }
 
-        let suppressionReady = eventSuppressor.start()
-        AppLogger.shared.write("HID FILTER ready=\(suppressionReady)")
-
         let manager = IOHIDManagerCreate(
             kCFAllocatorDefault,
             IOOptionBits(kIOHIDOptionsTypeNone)
@@ -147,27 +166,56 @@ final class ShortcutHIDMonitor {
             CFRunLoopMode.commonModes.rawValue
         )
 
-        let result = IOHIDManagerOpen(
+        let seizeResult = IOHIDManagerOpen(
             manager,
-            IOOptionBits(kIOHIDOptionsTypeNone)
+            IOOptionBits(kIOHIDOptionsTypeSeizeDevice)
         )
-        guard result == kIOReturnSuccess else {
-            IOHIDManagerUnscheduleFromRunLoop(
+        let monitoredResult = seizeResult == kIOReturnSuccess
+            ? kIOReturnError
+            : IOHIDManagerOpen(
                 manager,
-                CFRunLoopGetMain(),
-                CFRunLoopMode.commonModes.rawValue
+                IOOptionBits(kIOHIDOptionsTypeNone)
             )
-            eventSuppressor.stop()
-            updateStatus("无法读取遥控器（错误 \(result)）")
-            AppLogger.shared.write("HID START FAILED result=\(result)")
+        let openMode = HIDManagerOpenSelection.resolve(
+            seizeResult: seizeResult,
+            monitoredResult: monitoredResult
+        )
+
+        guard case let .unavailable(result) = openMode else {
+            managerOpenMode = openMode
+            let suppressionReady: Bool
+            if openMode == .monitored {
+                suppressionReady = eventSuppressor.start()
+                AppLogger.shared.write(
+                    "HID EXCLUSIVE unavailable=\(seizeResult) fallback=\(monitoredResult)"
+                )
+            } else {
+                suppressionReady = true
+            }
+            AppLogger.shared.write(
+                "HID FILTER active=\(eventSuppressor.isRunning) ready=\(suppressionReady)"
+            )
+
+            self.manager = manager
+            lifecycle.openPipeline()
+            startPermissionMonitor()
+            updateStatus("等待 RC003 遥控器")
+            AppLogger.shared.write(
+                "HID START mode=controller_only access=\(openMode.logName)"
+            )
             return
         }
 
-        self.manager = manager
-        lifecycle.openPipeline()
-        startPermissionMonitor()
-        updateStatus("等待 RC003 遥控器")
-        AppLogger.shared.write("HID START mode=controller_only")
+        IOHIDManagerUnscheduleFromRunLoop(
+            manager,
+            CFRunLoopGetMain(),
+            CFRunLoopMode.commonModes.rawValue
+        )
+        eventSuppressor.stop()
+        updateStatus("无法读取遥控器（错误 \(result)）")
+        AppLogger.shared.write(
+            "HID START FAILED seize=\(seizeResult) monitor=\(monitoredResult)"
+        )
     }
 
     func refresh() {
@@ -181,13 +229,7 @@ final class ShortcutHIDMonitor {
         edgeTracker.reset()
         eventSuppressor.stop()
 
-        if let activeDevice {
-            IOHIDDeviceClose(
-                activeDevice,
-                IOOptionBits(kIOHIDOptionsTypeNone)
-            )
-            self.activeDevice = nil
-        }
+        activeDevice = nil
         activeDeviceIsSeized = false
         isExclusivelyReading = false
 
@@ -203,6 +245,7 @@ final class ShortcutHIDMonitor {
             )
             self.manager = nil
         }
+        managerOpenMode = nil
 
         lifecycle.closePipeline()
         setConnected(false)
@@ -211,34 +254,17 @@ final class ShortcutHIDMonitor {
     fileprivate func deviceDidMatch(result: IOReturn, device: IOHIDDevice) {
         guard manager != nil, !lifecycle.devicePresent else { return }
 
-        var openSucceeded = false
-        var seized = false
-        var openResult = result
-        if result == kIOReturnSuccess {
-            let seizeResult = IOHIDDeviceOpen(
-                device,
-                IOOptionBits(kIOHIDOptionsTypeSeizeDevice)
-            )
-            if seizeResult == kIOReturnSuccess {
-                openSucceeded = true
-                seized = true
-            } else {
-                openResult = IOHIDDeviceOpen(
-                    device,
-                    IOOptionBits(kIOHIDOptionsTypeNone)
-                )
-                openSucceeded = openResult == kIOReturnSuccess
-            }
-        }
+        let openSucceeded = result == kIOReturnSuccess
+        let seized = managerOpenMode == .seized
 
         switch lifecycle.matched(openSucceeded: openSucceeded) {
         case .ignored:
             return
         case .unreadable:
-            updateStatus("无法读取 RC003（错误 \(openResult)）")
-            AppLogger.shared.write("HID DEVICE OPEN FAILED result=\(openResult)")
+            updateStatus("无法读取 RC003（错误 \(result)）")
+            AppLogger.shared.write("HID DEVICE OPEN FAILED result=\(result)")
             DispatchQueue.main.async { [weak self] in
-                self?.failReaderClosed(result: openResult)
+                self?.failReaderClosed(result: result)
             }
         case .present:
             activeDevice = device
@@ -265,10 +291,6 @@ final class ShortcutHIDMonitor {
         _ = lifecycle.removed()
         _ = emitter.forceReleaseAll(reason: "device_removed")
         edgeTracker.reset()
-        IOHIDDeviceClose(
-            activeDevice,
-            IOOptionBits(kIOHIDOptionsTypeNone)
-        )
         self.activeDevice = nil
         activeDeviceIsSeized = false
         isExclusivelyReading = false
@@ -357,5 +379,15 @@ final class ShortcutHIDMonitor {
         guard value != isConnected else { return }
         isConnected = value
         onConnectionChange?(value)
+    }
+}
+
+private extension HIDManagerOpenMode {
+    var logName: String {
+        switch self {
+        case .seized: return "seized"
+        case .monitored: return "monitored"
+        case .unavailable: return "unavailable"
+        }
     }
 }
