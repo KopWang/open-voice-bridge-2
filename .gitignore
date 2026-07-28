@@ -1,6 +1,7 @@
 .build/
 dist/
 .swiftpm/
+.worktrees/
 *.xcuserstate
 .DS_Store
 __pycache__/
